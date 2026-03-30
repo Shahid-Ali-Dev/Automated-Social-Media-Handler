@@ -1,6 +1,7 @@
 import os
 import tempfile
 import requests
+import time
 import tweepy
 from fastapi import APIRouter, HTTPException
 from app.core.db import get_db_connection
@@ -26,6 +27,11 @@ client = tweepy.Client(
     access_token=os.environ.get("X_ACCESS_TOKEN"),
     access_token_secret=os.environ.get("X_ACCESS_TOKEN_SECRET")
 ) # For text and publishing
+
+def is_video(url: str) -> bool:
+    """Checks if the Cloudinary URL is a video file."""
+    video_extensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv']
+    return any(ext in url.lower() for ext in video_extensions) or "/video/upload/" in url
 
 def format_tweet_text(title, description, hashtags):
     """Formats the post and ensures it stays under X's 280-character limit."""
@@ -121,19 +127,21 @@ def get_linkedin_user_urn(access_token):
     else:
         raise Exception(f"Failed to fetch URN. Error: {response.text}")
 
-def upload_image_to_linkedin(image_url, access_token, author_urn):
-    """The 3-step dance to get an image from Cloudinary into LinkedIn's servers."""
+def upload_media_to_linkedin(media_url, access_token, author_urn, is_vid):
+    """Dynamically handles both Images and Videos for LinkedIn."""
     headers = {
         "Authorization": f"Bearer {access_token}",
         "X-Restli-Protocol-Version": "2.0.0",
         "Content-Type": "application/json"
     }
 
-    # Step 1: Register the upload
+    # Step 1: Register the upload using the correct recipe
+    recipe = "urn:li:digitalmediaRecipe:feedshare-video" if is_vid else "urn:li:digitalmediaRecipe:feedshare-image"
+    
     register_url = "https://api.linkedin.com/v2/assets?action=registerUpload"
     register_payload = {
         "registerUploadRequest": {
-            "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+            "recipes": [recipe],
             "owner": author_urn,
             "serviceRelationships": [
                 {"relationshipType": "OWNER", "identifier": "urn:li:userGeneratedContent"}
@@ -143,117 +151,99 @@ def upload_image_to_linkedin(image_url, access_token, author_urn):
     
     reg_response = requests.post(register_url, headers=headers, json=register_payload)
     if reg_response.status_code != 200:
-        raise Exception(f"Failed to register image: {reg_response.text}")
+        raise Exception(f"Failed to register media: {reg_response.text}")
         
     reg_data = reg_response.json()
     upload_url = reg_data['value']['uploadMechanism']['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest']['uploadUrl']
     asset_urn = reg_data['value']['asset']
 
-    # Step 2: Download from Cloudinary
-    img_response = requests.get(image_url)
-    if img_response.status_code != 200:
-        raise Exception("Failed to download image from Cloudinary")
-
-    # Step 3: Upload the binary data to LinkedIn
+    # Step 2 & 3: Download from Cloudinary and Upload binary to LinkedIn
+    media_response = requests.get(media_url)
     upload_headers = {"Authorization": f"Bearer {access_token}"}
-    upload_res = requests.put(upload_url, headers=upload_headers, data=img_response.content)
     
-    if upload_res.status_code != 201:
+    # LinkedIn requires application/octet-stream for videos to process correctly
+    if is_vid:
+        upload_headers["Content-Type"] = "application/octet-stream"
+        
+    upload_res = requests.put(upload_url, headers=upload_headers, data=media_response.content)
+    
+    if upload_res.status_code not in [200, 201]:
         raise Exception(f"Failed to upload binary to LinkedIn: {upload_res.text}")
 
     return asset_urn
 
 @router.post("/linkedin/{post_id}")
 async def publish_to_linkedin(post_id: int):
-    """Fetches a post and publishes it to LinkedIn, handling multiple images."""
     conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=500, detail="Database connection failed")
-    
     try:
         cursor = conn.cursor()
-        
-        # 1. Fetch Post Data
         cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
         post = cursor.fetchone()
-        if not post:
-            raise HTTPException(status_code=404, detail="Post not found")
-            
-        # 2. Fetch Attached Media (LinkedIn allows up to 9 images in a multi-image post)
+        
         cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 9;", (post_id,))
         media_records = cursor.fetchall()
             
-        # 3. Format the Text Content
         title = post['enhanced_title']
         description = post['enhanced_description']
-        hashtags = post['hashtags']
-        tags_str = " ".join([f"#{tag}" for tag in hashtags]) if hashtags else ""
+        tags_str = " ".join([f"#{tag}" for tag in post['hashtags']]) if post['hashtags'] else ""
         full_text = f"{title}\n\n{description}\n\n{tags_str}"
         
-        # 4. Prepare LinkedIn Credentials
         access_token = os.environ.get("LINKEDIN_ACCESS_TOKEN")
         author_urn = get_linkedin_user_urn(access_token)
         
-        # 5. Process Images if they exist
         linkedin_media_items = []
+        is_post_video = False
+        
         if media_records:
             for record in media_records:
-                # Upload each image and get the LinkedIn Asset URN back
-                asset_urn = upload_image_to_linkedin(record['media_url'], access_token, author_urn)
+                is_vid = is_video(record['media_url'])
+                if is_vid: is_post_video = True
                 
-                # Format it for the final post payload
+                # Use our upgraded helper function
+                asset_urn = upload_media_to_linkedin(record['media_url'], access_token, author_urn, is_vid)
+                
                 linkedin_media_items.append({
                     "status": "READY",
-                    "description": {"text": title}, # Alt text
+                    "description": {"text": title}, 
                     "media": asset_urn,
                     "title": {"text": title}
                 })
 
-        # 6. Construct the Final Payload
+        # Set category to VIDEO or IMAGE
+        if not linkedin_media_items:
+            category = "NONE"
+        else:
+            category = "VIDEO" if is_post_video else "IMAGE"
+
         share_content = {
             "shareCommentary": {"text": full_text},
-            "shareMediaCategory": "IMAGE" if linkedin_media_items else "NONE"
+            "shareMediaCategory": category
         }
         
-        # Only attach the media array if we actually have images
         if linkedin_media_items:
             share_content["media"] = linkedin_media_items
 
         payload = {
             "author": author_urn,
             "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": share_content
-            },
-            "visibility": {
-                "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-            }
+            "specificContent": {"com.linkedin.ugc.ShareContent": share_content},
+            "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"}
         }
         
-        # 7. Send the Final Post to LinkedIn!
         url = "https://api.linkedin.com/v2/ugcPosts"
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "X-Restli-Protocol-Version": "2.0.0",
-            "Content-Type": "application/json"
-        }
-        
+        headers = {"Authorization": f"Bearer {access_token}", "X-Restli-Protocol-Version": "2.0.0", "Content-Type": "application/json"}
         response = requests.post(url, headers=headers, json=payload)
         
         if response.status_code != 201:
             raise Exception(f"LinkedIn API Error: {response.text}")
             
-        # 8. Update Database Status
         cursor.execute("UPDATE posts SET status = 'Posted' WHERE id = %s;", (post_id,))
         conn.commit()
-        
-        return {"message": "Successfully posted to LinkedIn with media!"}
-        
+        return {"message": "Successfully posted to LinkedIn!"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to publish: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
-        cursor.close()
-        conn.close()
+        if conn: cursor.close(); conn.close()
 
 def get_page_access_token(system_user_token, page_id):
     """Exchanges the System User Token for a dedicated Page Access Token."""
@@ -275,59 +265,48 @@ def optimize_media_url_for_ig(url):
 
 @router.post("/facebook/{post_id}")
 async def publish_to_facebook(post_id: int):
-    """Publishes to Facebook, automatically handling single or multiple images."""
     conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=500, detail="Database connection failed")
-        
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
         post = cursor.fetchone()
         
-        # Grab up to 10 images (Facebook's carousel limit)
         cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 10;", (post_id,))
         media_records = cursor.fetchall()
         
-        title = post['enhanced_title']
-        description = post['enhanced_description']
-        hashtags = " ".join([f"#{tag}" for tag in post['hashtags']]) if post['hashtags'] else ""
-        full_text = f"{title}\n\n{description}\n\n{hashtags}"
+        full_text = f"{post['enhanced_title']}\n\n{post['enhanced_description']}\n\n" + (" ".join([f"#{t}" for t in post['hashtags']]) if post['hashtags'] else "")
         
         system_token = os.environ.get("META_ACCESS_TOKEN")
         page_id = os.environ.get("FACEBOOK_PAGE_ID")
         page_token = get_page_access_token(system_token, page_id)
         
         if not media_records:
-            # TEXT ONLY
             url = f"https://graph.facebook.com/v19.0/{page_id}/feed"
-            payload = {"message": full_text, "access_token": page_token}
-            response = requests.post(url, data=payload)
+            response = requests.post(url, data={"message": full_text, "access_token": page_token})
             
         elif len(media_records) == 1:
-            # SINGLE IMAGE
-            url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
-            payload = {"url": media_records[0]['media_url'], "message": full_text, "access_token": page_token}
+            is_vid = is_video(media_records[0]['media_url'])
+            if is_vid:
+                # FB Video Endpoint & Payload
+                url = f"https://graph.facebook.com/v19.0/{page_id}/videos"
+                payload = {"file_url": media_records[0]['media_url'], "description": full_text, "access_token": page_token}
+            else:
+                # FB Photo Endpoint
+                url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
+                payload = {"url": media_records[0]['media_url'], "message": full_text, "access_token": page_token}
             response = requests.post(url, data=payload)
             
         else:
-            # MULTI-IMAGE CAROUSEL
+            # Multi-image carousel logic remains the same (FB API handles video carousels poorly, so stick to images for carousels)
             attached_media = []
-            # Step 1: Upload each photo as "unpublished" to get an ID
             for record in media_records:
                 photo_url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
-                photo_payload = {"url": record['media_url'], "published": "false", "access_token": page_token}
-                photo_res = requests.post(photo_url, data=photo_payload)
-                if photo_res.status_code == 200:
-                    attached_media.append(photo_res.json().get("id"))
+                photo_res = requests.post(photo_url, data={"url": record['media_url'], "published": "false", "access_token": page_token})
+                if photo_res.status_code == 200: attached_media.append(photo_res.json().get("id"))
             
-            # Step 2: Attach all IDs to a single feed post
-            feed_url = f"https://graph.facebook.com/v19.0/{page_id}/feed"
             payload = {"message": full_text, "access_token": page_token}
-            for i, media_id in enumerate(attached_media):
-                payload[f"attached_media[{i}]"] = f'{{"media_fbid":"{media_id}"}}'
-                
-            response = requests.post(feed_url, data=payload)
+            for i, media_id in enumerate(attached_media): payload[f"attached_media[{i}]"] = f'{{"media_fbid":"{media_id}"}}'
+            response = requests.post(f"https://graph.facebook.com/v19.0/{page_id}/feed", data=payload)
 
         if response.status_code != 200:
             raise Exception(f"Facebook API Error: {response.text}")
@@ -335,89 +314,77 @@ async def publish_to_facebook(post_id: int):
         cursor.execute("UPDATE posts SET status = 'Posted' WHERE id = %s;", (post_id,))
         conn.commit()
         return {"message": "Successfully posted to Facebook!"}
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        cursor.close()
-        conn.close()
+        if conn: cursor.close(); conn.close()
+
 
 @router.post("/instagram/{post_id}")
 async def publish_to_instagram(post_id: int):
-    """Publishes to Instagram, automatically handling aspect ratios and carousels."""
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
         post = cursor.fetchone()
         
-        # Grab up to 10 images (Instagram's carousel limit)
         cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 10;", (post_id,))
         media_records = cursor.fetchall()
-        
-        if not media_records:
-            raise HTTPException(status_code=400, detail="Instagram requires at least one image.")
+        if not media_records: raise HTTPException(status_code=400, detail="Instagram requires media.")
             
-        title = post['enhanced_title']
-        description = post['enhanced_description']
-        hashtags = " ".join([f"#{tag}" for tag in post['hashtags']]) if post['hashtags'] else ""
-        full_text = f"{title}\n\n{description}\n\n{hashtags}"
-        
-        system_token = os.environ.get("META_ACCESS_TOKEN")
+        full_text = f"{post['enhanced_title']}\n\n{post['enhanced_description']}\n\n" + (" ".join([f"#{t}" for t in post['hashtags']]) if post['hashtags'] else "")
+        page_token = get_page_access_token(os.environ.get("META_ACCESS_TOKEN"), os.environ.get("FACEBOOK_PAGE_ID"))
         ig_id = os.environ.get("INSTAGRAM_ACCOUNT_ID")
-        page_id = os.environ.get("FACEBOOK_PAGE_ID")
-        page_token = get_page_access_token(system_token, page_id)
         
         if len(media_records) == 1:
-            # SINGLE IMAGE
             safe_url = optimize_media_url_for_ig(media_records[0]['media_url'])
-            container_url = f"https://graph.facebook.com/v19.0/{ig_id}/media"
-            container_payload = {"image_url": safe_url, "caption": full_text, "access_token": page_token}
-            cont_response = requests.post(container_url, data=container_payload)
-            if cont_response.status_code != 200:
-                raise Exception(f"Failed to create IG container: {cont_response.text}")
+            is_vid = is_video(media_records[0]['media_url'])
+            
+            container_payload = {"caption": full_text, "access_token": page_token}
+            if is_vid:
+                container_payload["video_url"] = safe_url
+                container_payload["media_type"] = "VIDEO"
+            else:
+                container_payload["image_url"] = safe_url
+                
+            cont_response = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data=container_payload)
+            if cont_response.status_code != 200: raise Exception(f"IG container failed: {cont_response.text}")
             creation_id = cont_response.json().get("id")
             
+            # 🔥 IG VIDEO FIX: Wait for Meta's servers to process the video before publishing
+            if is_vid:
+                status_url = f"https://graph.facebook.com/v19.0/{creation_id}?fields=status_code&access_token={page_token}"
+                for _ in range(10):  # Check 10 times, wait 3 seconds each time
+                    time.sleep(3)
+                    status_res = requests.get(status_url)
+                    if status_res.status_code == 200 and status_res.json().get('status_code') == 'FINISHED':
+                        break
         else:
-            # MULTI-IMAGE CAROUSEL
+            # Carousel Logic remains the same
             children_ids = []
-            # Step 1: Create an "Item Container" for each image
             for record in media_records:
                 safe_url = optimize_media_url_for_ig(record['media_url'])
-                item_url = f"https://graph.facebook.com/v19.0/{ig_id}/media"
-                item_payload = {"image_url": safe_url, "is_carousel_item": "true", "access_token": page_token}
-                item_res = requests.post(item_url, data=item_payload)
-                if item_res.status_code == 200:
-                    children_ids.append(item_res.json().get("id"))
+                is_vid = is_video(record['media_url'])
+                payload = {"is_carousel_item": "true", "access_token": page_token}
+                if is_vid:
+                    payload["video_url"] = safe_url
+                    payload["media_type"] = "VIDEO"
+                else:
+                    payload["image_url"] = safe_url
+                item_res = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data=payload)
+                if item_res.status_code == 200: children_ids.append(item_res.json().get("id"))
             
-            # Step 2: Group them into a Carousel Container
-            carousel_url = f"https://graph.facebook.com/v19.0/{ig_id}/media"
-            carousel_payload = {
-                "media_type": "CAROUSEL",
-                "children": ",".join(children_ids),
-                "caption": full_text,
-                "access_token": page_token
-            }
-            car_res = requests.post(carousel_url, data=carousel_payload)
-            if car_res.status_code != 200:
-                raise Exception(f"Failed to create Carousel: {car_res.text}")
+            car_res = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data={"media_type": "CAROUSEL", "children": ",".join(children_ids), "caption": full_text, "access_token": page_token})
             creation_id = car_res.json().get("id")
 
-        # FINAL STEP: Publish the container (works for both single and carousel)
-        publish_url = f"https://graph.facebook.com/v19.0/{ig_id}/media_publish"
-        publish_payload = {"creation_id": creation_id, "access_token": page_token}
-        pub_response = requests.post(publish_url, data=publish_payload)
-        
-        if pub_response.status_code != 200:
-            raise Exception(f"Failed to publish to IG: {pub_response.text}")
+        # Publish
+        pub_response = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media_publish", data={"creation_id": creation_id, "access_token": page_token})
+        if pub_response.status_code != 200: raise Exception(f"Failed to publish to IG: {pub_response.text}")
             
         cursor.execute("UPDATE posts SET status = 'Posted' WHERE id = %s;", (post_id,))
         conn.commit()
         return {"message": "Successfully posted to Instagram!"}
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if conn:
-            cursor.close()
-            conn.close()
+        if conn: cursor.close(); conn.close()
