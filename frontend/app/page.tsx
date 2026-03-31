@@ -18,8 +18,14 @@ const Icons = {
   LinkedIn: () => (
     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path fillRule="evenodd" d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" clipRule="evenodd" /></svg>
   ),
+  YouTube: () => (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+  ),
   X: () => (
     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 22.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.008 5.96H5.078z" /></svg>
+  ),
+  Threads: () => (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.012 2C6.48 2 2 6.48 2 12.012c0 5.531 4.48 10.012 10.012 10.012 5.531 0 10.012-4.48 10.012-10.012C22.024 6.48 17.543 2 12.012 2Zm3.472 14.545c-1.12.946-2.585 1.135-4.104.912-1.353-.2-2.502-.876-3.238-1.996-1.196-1.821-1.025-4.526.438-6.191 1.09-1.238 2.656-1.761 4.298-1.558 1.954.24 3.447 1.487 3.93 3.327.34 1.306.12 2.673-.62 3.824-.46.717-1.056 1.155-1.782 1.34-1.09.28-2.148-.206-2.508-1.258-.297-.866.074-1.874.622-2.597.43-.568.995-1.025 1.576-1.428.188-.13.38-.255.577-.37.31-.183.504-.543.433-.902-.09-.446-.494-.741-.954-.741-.663 0-1.29.35-1.666.92-.61.92-.816 2.072-.651 3.16.155 1.025.753 1.952 1.637 2.39 1.096.543 2.454.346 3.366-.453.642-.562.981-1.328 1.05-2.176.082-1.018-.216-1.996-.79-2.8-.846-1.185-2.197-1.802-3.65-1.685-1.574.126-2.99 1.022-3.702 2.433-.706 1.396-.706 3.033 0 4.43.712 1.411 2.128 2.306 3.702 2.433 1.085.087 2.164-.202 3.064-.787.524-.342.712-1.042.42-1.602-.29-.56-1.002-.74-1.565-.398Z"/></svg>
   ),
 };
 
@@ -28,7 +34,9 @@ const PLATFORMS = [
   { id: 'LinkedIn', icon: <Icons.LinkedIn />, color: 'text-[#0A66C2]', bg: 'hover:bg-blue-50 border-blue-200' },
   { id: 'Facebook', icon: <Icons.Facebook />, color: 'text-[#1877F2]', bg: 'hover:bg-blue-50 border-blue-200' },
   { id: 'Instagram', icon: <Icons.Instagram />, color: 'text-[#E4405F]', bg: 'hover:bg-pink-50 border-pink-200' },
-  { id: 'Twitter/X', icon: <Icons.X />, color: 'text-black', bg: 'hover:bg-gray-100 border-gray-300' }
+  { id: 'Twitter/X', icon: <Icons.X />, color: 'text-black', bg: 'hover:bg-gray-100 border-gray-300' },
+  { id: 'YouTube', icon: <Icons.YouTube />, color: 'text-[#FF0000]', bg: 'hover:bg-red-50 border-red-200' },
+  { id: 'Threads', icon: <Icons.Threads />, color: 'text-black', bg: 'hover:bg-gray-100 border-gray-300' },
 ];
 
 // Helper to format dates cleanly
@@ -108,20 +116,40 @@ export default function Home() {
   const handleUnifiedPublish = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!publishModalOpen || selectedPlatforms.length === 0) return;
+    
     setIsPublishing(publishModalOpen);
+    
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/publish/unified/${publishModalOpen}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platforms: selectedPlatforms, admin_password: adminPassword })
+        body: JSON.stringify({
+          platforms: selectedPlatforms,
+          admin_password: adminPassword
+        })
       });
+      
       const data = await response.json();
+      
       if (response.ok) {
-        alert("Publish cycle finished! Check logs for details.");
-        setPublishModalOpen(null); setAdminPassword(""); setSelectedPlatforms([]); fetchHistory();
-      } else { alert(`Error: ${data.detail}`); }
-    } catch (error) { alert("Failed to connect to server."); } 
-    finally { setIsPublishing(null); }
+        // CLOSE publish modal, RESET form, REFRESH history
+        setPublishModalOpen(null);
+        setAdminPassword("");
+        setSelectedPlatforms([]);
+        fetchHistory(); 
+        
+        // OPEN the logs modal instantly with the fresh results!
+        setLogsModalOpen(data.logs); 
+      } else {
+        // Show server-level errors (like wrong password) beautifully
+        setLogsModalOpen([{ platform: "System", status: "Failed", error_message: data.detail }]);
+      }
+    } catch (error) {
+      console.error(error);
+      setLogsModalOpen([{ platform: "Network", status: "Failed", error_message: "Failed to connect to the backend server." }]);
+    } finally {
+      setIsPublishing(null);
+    }
   };
 
   const fetchLogsForPost = async (postId: number) => {
@@ -207,27 +235,53 @@ export default function Home() {
 
       {/* --- LOGS MODAL OVERLAY --- */}
       {logsModalOpen !== null && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-lg w-full border border-slate-100">
-            <h3 className="text-2xl font-bold mb-4 text-slate-900">Publish Logs</h3>
-            <div className="space-y-3 mb-6 max-h-60 overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-lg w-full border border-slate-100 flex flex-col max-h-[85vh]">
+            <h3 className="text-2xl font-bold mb-4 text-slate-900">Publish Results</h3>
+            
+            <div className="space-y-4 mb-6 overflow-y-auto custom-scrollbar pr-2">
               {logsModalOpen.length === 0 ? (
-                <p className="text-slate-500 text-sm">No logs found for this post.</p>
+                <p className="text-slate-500 text-sm text-center py-4 border-2 border-dashed rounded-xl">No logs found.</p>
               ) : (
                 logsModalOpen.map((log, idx) => (
                   <div key={idx} className={`p-4 rounded-xl border ${log.status === 'Success' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-bold">{log.platform}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${log.status === 'Success' ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
-                        {log.status}
+                    
+                    {/* Header: Platform, Badge, and Time */}
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-slate-800">{log.platform}</span>
+                        <span className={`text-xs px-2.5 py-1 rounded-md font-bold uppercase tracking-wide ${
+                          log.status === 'Success' ? 'bg-green-200 text-green-800' : 
+                          log.status === 'Skipped' ? 'bg-amber-200 text-amber-800' : 
+                          'bg-red-200 text-red-800'
+                        }`}>
+                          {log.status}
+                        </span>
+                      </div>
+                      <span className="text-xs text-slate-400 font-bold bg-white px-2 py-1 rounded-md shadow-sm border border-slate-100">
+                        {log.published_at ? formatDate(log.published_at) : "Just now"}
                       </span>
                     </div>
-                    {log.error_message && <p className="text-xs text-red-600 font-mono bg-white p-2 rounded mt-2 overflow-x-auto">{log.error_message}</p>}
+
+                    {/* Error Message Box (Handles both DB logs and instant API response keys) */}
+                    {(log.error_message || log.error) && (
+                      <div className="mt-3 bg-white border border-red-100 rounded-lg p-3 shadow-inner overflow-hidden">
+                        <p className="text-xs text-red-600 font-mono break-words whitespace-pre-wrap leading-relaxed">
+                          {log.error_message || log.error}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
             </div>
-            <button onClick={() => setLogsModalOpen(null)} className="w-full py-3 bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 rounded-xl transition-colors">Close</button>
+            
+            <button 
+              onClick={() => setLogsModalOpen(null)} 
+              className="w-full py-3 bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 rounded-xl transition-colors mt-auto"
+            >
+              Close Report
+            </button>
           </div>
         </div>
       )}
@@ -242,7 +296,7 @@ export default function Home() {
               <div>
                 <div className="flex justify-between items-end mb-3">
                   <label className="block text-sm font-bold text-slate-700">Select Networks</label>
-                  <button type="button" onClick={() => setSelectedPlatforms(['LinkedIn', 'Facebook', 'Instagram', 'Twitter/X'])} className="text-xs text-indigo-600 font-bold hover:underline">Select All</button>
+                  <button type="button" onClick={() => setSelectedPlatforms(['LinkedIn', 'Facebook', 'Instagram', 'Twitter/X', 'YouTube', 'Threads'])} className="text-xs text-indigo-600 font-bold hover:underline">Select All</button>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">
@@ -355,8 +409,11 @@ export default function Home() {
 
           {/* RIGHT COLUMN: THE HISTORY FEED */}
           <div className="lg:col-span-7">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
-              <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pb-4 border-b border-slate-100">
+            {/* Changed p-6 to px-6 pb-6 to remove top padding from the container */}
+            <div className="bg-white px-6 pb-6 rounded-2xl shadow-sm border border-slate-200 h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar">
+              
+              {/* Added pt-6 here so the sticky header provides the top padding and covers the gap, bumped z-index to 20 */}
+              <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-20 pt-6 pb-4 border-b border-slate-100">
                 <h2 className="text-2xl font-bold">Content Library</h2>
                 <span className="text-sm font-bold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
                   {history.length} Saved

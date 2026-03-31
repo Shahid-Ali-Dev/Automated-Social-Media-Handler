@@ -55,6 +55,14 @@ def init_db():
         published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """
+    create_tokens_table_query = """
+    CREATE TABLE IF NOT EXISTS api_tokens (
+        platform VARCHAR(50) PRIMARY KEY,
+        access_token TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+    cursor.execute(create_tokens_table_query)
     cursor.execute(create_logs_table_query)
     cursor.execute(create_table_query)
     cursor.execute(create_media_table_query)
