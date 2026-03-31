@@ -45,6 +45,17 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """
+    create_logs_table_query = """
+    CREATE TABLE IF NOT EXISTS publish_logs (
+        id SERIAL PRIMARY KEY,
+        post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+        platform VARCHAR(50) NOT NULL,
+        status VARCHAR(20) NOT NULL, -- 'Success' or 'Failed'
+        error_message TEXT,
+        published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+    cursor.execute(create_logs_table_query)
     cursor.execute(create_table_query)
     cursor.execute(create_media_table_query)
     conn.commit()
