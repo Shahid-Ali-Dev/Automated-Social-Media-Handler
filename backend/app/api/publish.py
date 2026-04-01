@@ -1,5 +1,6 @@
 import os
 import tempfile
+import praw
 import requests
 import base64
 from typing import List, Optional
@@ -38,12 +39,13 @@ client = tweepy.Client(
     consumer_secret=os.environ.get("X_API_SECRET"),
     access_token=os.environ.get("X_ACCESS_TOKEN"),
     access_token_secret=os.environ.get("X_ACCESS_TOKEN_SECRET")
-) # For X text publishing
+) 
 
 class UnifiedPublishRequest(BaseModel):
     platforms: List[str]
     admin_password: str
     pinterest_board_id: Optional[str] = None
+    reddit_subreddit: Optional[str] = None
 
 class SkipPublishException(Exception):
     pass
@@ -260,26 +262,45 @@ async def process_x(post_id: int):
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
         post = cursor.fetchone()
+        
         cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 4;", (post_id,))
         media_records = cursor.fetchall()
         
         media_ids = []
         if media_records:
             for record in media_records:
-                response = requests.get(record['media_url'])
-                if response.status_code == 200:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
-                        temp_file.write(response.content)
-                        temp_file_path = temp_file.name
-                    media_upload = api_v1.media_upload(temp_file_path)
-                    media_ids.append(media_upload.media_id)
-                    os.remove(temp_file_path)
+                res = requests.get(record['media_url'])
+                if res.status_code == 200:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                        tmp.write(res.content)
+                        tmp_path = tmp.name
+                    try:
+                        # V1.1 Upload (Requires Free/Basic/Pro tier)
+                        media_upload = api_v1.media_upload(tmp_path)
+                        media_ids.append(media_upload.media_id)
+                    except Exception as media_err:
+                        # If media upload fails, we should know why (e.g., "Too Many Requests" or "Forbidden")
+                        raise Exception(f"X Media Upload Failed: {str(media_err)}")
+                    finally:
+                        if os.path.exists(tmp_path): os.remove(tmp_path)
 
         tweet_text = format_tweet_text(post['enhanced_title'], post['enhanced_description'], post['hashtags'])
-        if media_ids: client.create_tweet(text=tweet_text, media_ids=media_ids)
-        else: client.create_tweet(text=tweet_text)
+
+        # V2 Tweet Creation
+        response = client.create_tweet(text=tweet_text, media_ids=media_ids if media_ids else None)
+
+        # Robust check for the response
+        if not response or not response.data or 'id' not in response.data:
+            raise Exception("X API did not return a Tweet ID. Check if your API key permissions are set to 'Read and Write'.")
+
+    except Exception as e:
+        # 🔥 Catch EVERY error (auth, network, API) and raise it as a string
+        # This ensures the Master Controller logs the EXACT failure reason
+        raise Exception(str(e))
     finally:
-        if conn: cursor.close(); conn.close()
+        if conn:
+            cursor.close()
+            conn.close()
 
 async def process_linkedin(post_id: int):
     conn = get_db_connection()
@@ -358,45 +379,57 @@ async def process_instagram(post_id: int):
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
         post = cursor.fetchone()
+        
+        # Fetch media
         cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 10;", (post_id,))
         media_records = cursor.fetchall()
-        
-        if not media_records: raise Exception("Instagram requires media.")
+
+        if not media_records:
+            raise SkipPublishException("Smart Skip: Instagram requires an image or video. No media found.")
             
         full_text = f"{post['enhanced_title']}\n\n{post['enhanced_description']}\n\n" + (" ".join([f"#{t}" for t in post['hashtags']]) if post['hashtags'] else "")
         page_token = get_page_access_token(os.environ.get("META_ACCESS_TOKEN"), os.environ.get("FACEBOOK_PAGE_ID"))
         ig_id = os.environ.get("INSTAGRAM_ACCOUNT_ID")
         
+        # --- Proceed with Container Creation ---
         if len(media_records) == 1:
             safe_url = optimize_media_url_for_ig(media_records[0]['media_url'])
             is_vid = is_video(media_records[0]['media_url'])
-            payload = {"caption": full_text, "access_token": page_token, "video_url" if is_vid else "image_url": safe_url}
-            if is_vid: payload["media_type"] = "VIDEO"
+            
+            container_payload = {"caption": full_text, "access_token": page_token}
+            if is_vid:
+                container_payload["video_url"] = safe_url
+                container_payload["media_type"] = "REELS"
+            else:
+                container_payload["image_url"] = safe_url
                 
-            cont_res = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data=payload)
-            if cont_res.status_code != 200: raise Exception(f"IG container failed: {cont_res.text}")
-            creation_id = cont_res.json().get("id")
+            # Added timeout to prevent the crash you saw on Threads
+            cont_response = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data=container_payload, timeout=(10, 180))
+            if cont_response.status_code != 200: raise Exception(f"IG container failed: {cont_response.text}")
+            creation_id = cont_response.json().get("id")
             
             if is_vid:
-                for _ in range(10): 
-                    time.sleep(3)
+                for _ in range(15): 
+                    time.sleep(5)
                     status_res = requests.get(f"https://graph.facebook.com/v19.0/{creation_id}?fields=status_code&access_token={page_token}")
                     if status_res.status_code == 200 and status_res.json().get('status_code') == 'FINISHED': break
         else:
+            # Multi-media Carousels (Note: Carousels still use "VIDEO" inside children, 
+            # but the main container handles it differently)
             children_ids = []
             for record in media_records:
                 safe_url = optimize_media_url_for_ig(record['media_url'])
                 is_vid = is_video(record['media_url'])
                 payload = {"is_carousel_item": "true", "access_token": page_token, "video_url" if is_vid else "image_url": safe_url}
                 if is_vid: payload["media_type"] = "VIDEO"
-                item_res = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data=payload)
+                item_res = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data=payload, timeout=(10, 120))
                 if item_res.status_code == 200: children_ids.append(item_res.json().get("id"))
             
-            car_res = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data={"media_type": "CAROUSEL", "children": ",".join(children_ids), "caption": full_text, "access_token": page_token})
+            car_res = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data={"media_type": "CAROUSEL", "children": ",".join(children_ids), "caption": full_text, "access_token": page_token}, timeout=(10, 120))
             creation_id = car_res.json().get("id")
 
-        pub_res = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media_publish", data={"creation_id": creation_id, "access_token": page_token})
-        if pub_res.status_code != 200: raise Exception(f"Failed to publish to IG: {pub_res.text}")
+        pub_response = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media_publish", data={"creation_id": creation_id, "access_token": page_token}, timeout=(10, 120))
+        if pub_response.status_code != 200: raise Exception(f"Failed to publish to IG: {pub_response.text}")
     finally:
         if conn: cursor.close(); conn.close()
 
@@ -411,18 +444,19 @@ async def process_threads(post_id: int):
             
         full_text = f"{post['enhanced_title']}\n\n{post['enhanced_description']}\n\n" + (" ".join([f"#{t}" for t in post['hashtags']]) if post['hashtags'] else "")
         
-        # Pull our auto-managed token
         threads_token = get_smart_threads_token()
         threads_id = "me" 
         
-        # TEXT ONLY POST
+        # --- STEP 1: CREATE CONTAINER ---
+        
+        # A. TEXT ONLY POST
         if not media_records:
             payload = {"media_type": "TEXT", "text": full_text, "access_token": threads_token}
-            cont_res = requests.post(f"https://graph.threads.net/v1.0/{threads_id}/threads", data=payload)
-            if cont_res.status_code != 200: raise Exception(f"Threads text container failed: {cont_res.text}")
-            creation_id = cont_res.json().get("id")
+            res = requests.post(f"https://graph.threads.net/v1.0/{threads_id}/threads", data=payload, timeout=(10, 60))
+            if not res.ok: raise Exception(f"Threads Text Container Error: {res.text}")
+            creation_id = res.json().get("id")
             
-        # SINGLE IMAGE OR VIDEO
+        # B. SINGLE IMAGE OR VIDEO
         elif len(media_records) == 1:
             is_vid = is_video(media_records[0]['media_url'])
             payload = {"text": full_text, "access_token": threads_token}
@@ -434,18 +468,18 @@ async def process_threads(post_id: int):
                 payload["media_type"] = "IMAGE"
                 payload["image_url"] = media_records[0]['media_url']
                 
-            cont_res = requests.post(f"https://graph.threads.net/v1.0/{threads_id}/threads", data=payload)
-            if cont_res.status_code != 200: raise Exception(f"Threads media container failed: {cont_res.text}")
-            creation_id = cont_res.json().get("id")
+            res = requests.post(f"https://graph.threads.net/v1.0/{threads_id}/threads", data=payload, timeout=(10, 180))
+            if not res.ok: raise Exception(f"Threads Media Container Error: {res.text}")
+            creation_id = res.json().get("id")
             
             # Wait for video processing
             if is_vid:
-                for _ in range(10): 
-                    time.sleep(3)
+                for _ in range(15): 
+                    time.sleep(5)
                     status_res = requests.get(f"https://graph.threads.net/v1.0/{creation_id}?fields=status&access_token={threads_token}")
                     if status_res.status_code == 200 and status_res.json().get('status') == 'FINISHED': break
                     
-        # CAROUSEL MULTI-IMAGE
+        # C. CAROUSEL (MULTI-IMAGE/VIDEO)
         else:
             children_ids = []
             for record in media_records:
@@ -457,21 +491,44 @@ async def process_threads(post_id: int):
                 else:
                     payload["media_type"] = "IMAGE"
                     payload["image_url"] = record['media_url']
-                    
-                item_res = requests.post(f"https://graph.threads.net/v1.0/{threads_id}/threads", data=payload)
-                if item_res.status_code == 200: children_ids.append(item_res.json().get("id"))
+                
+                # Upload individual item
+                item_res = requests.post(f"https://graph.threads.net/v1.0/{threads_id}/threads", data=payload, timeout=(10, 120))
+                if item_res.ok:
+                    children_ids.append(item_res.json().get("id"))
+                else:
+                    # Log individual item failure but keep going if possible
+                    print(f"Warning: Carousel item failed: {item_res.text}")
             
-            car_res = requests.post(f"https://graph.threads.net/v1.0/{threads_id}/threads", data={"media_type": "CAROUSEL", "children": ",".join(children_ids), "text": full_text, "access_token": threads_token})
+            if len(children_ids) < 2:
+                raise Exception(f"Carousel failed: Need at least 2 successful items, but only got {len(children_ids)}.")
+
+            # Create the parent carousel container
+            car_payload = {
+                "media_type": "CAROUSEL", 
+                "children": ",".join(children_ids), 
+                "text": full_text, 
+                "access_token": threads_token
+            }
+            car_res = requests.post(f"https://graph.threads.net/v1.0/{threads_id}/threads", data=car_payload, timeout=(10, 120))
+            if not car_res.ok: raise Exception(f"Threads Carousel Parent Error: {car_res.text}")
             creation_id = car_res.json().get("id")
 
-        # STEP 2: Publish the Container
-        pub_res = requests.post(f"https://graph.threads.net/v1.0/{threads_id}/threads_publish", data={"creation_id": creation_id, "access_token": threads_token})
-        if pub_res.status_code != 200: raise Exception(f"Failed to publish to Threads: {pub_res.text}")
+        # --- STEP 2: PUBLISH THE CONTAINER ---
+        if not creation_id:
+            raise Exception("Critical Error: Container ID was not generated.")
+
+        pub_res = requests.post(
+            f"https://graph.threads.net/v1.0/{threads_id}/threads_publish", 
+            data={"creation_id": creation_id, "access_token": threads_token},
+            timeout=(10, 180) 
+        )
+        if not pub_res.ok: raise Exception(f"Failed to publish to Threads: {pub_res.text}")
         
     finally:
         if conn: cursor.close(); conn.close()
 
-async def process_pinterest(post_id: int, board_id: str): # <-- ADD ARGUMENT
+async def process_pinterest(post_id: int, board_id: str):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
@@ -515,6 +572,59 @@ async def process_pinterest(post_id: int, board_id: str): # <-- ADD ARGUMENT
         
         if response.status_code != 201:
             raise Exception(f"Pinterest API Error: {response.text}")
+
+    finally:
+        if conn: cursor.close(); conn.close()
+
+async def process_reddit(post_id: int, subreddit_name: str):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
+        post = cursor.fetchone()
+        cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s;", (post_id,))
+        media_records = cursor.fetchall()
+
+        if not subreddit_name:
+            raise Exception("A target Subreddit must be provided (e.g., 'test').")
+
+        # 1. Authenticate with Reddit
+        reddit = praw.Reddit(
+            client_id=os.environ.get("REDDIT_CLIENT_ID"),
+            client_secret=os.environ.get("REDDIT_CLIENT_SECRET"),
+            username=os.environ.get("REDDIT_USERNAME"),
+            password=os.environ.get("REDDIT_PASSWORD"),
+            user_agent="web:social-auto-engine:v1.0 (by u/shoutotb)"
+        )
+
+        subreddit = reddit.subreddit(subreddit_name)
+        
+        # Reddit titles are capped at 300 characters
+        title = post['enhanced_title'][:300] 
+        tags_str = " ".join([f"#{tag}" for tag in post['hashtags']]) if post['hashtags'] else ""
+        full_text = f"{post['enhanced_description']}\n\n{tags_str}"
+
+        # 2. Find the first image (Skip videos for now, as Reddit API video handling is complex)
+        image_url = next((m['media_url'] for m in media_records if not is_video(m['media_url'])), None)
+
+        if image_url:
+            # Download image to temp file for Reddit upload
+            res = requests.get(image_url, stream=True)
+            if res.status_code == 200:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_img:
+                    temp_img.write(res.content)
+                    temp_img_path = temp_img.name
+
+                try:
+                    # Submit Image Post
+                    subreddit.submit_image(title=title, image_path=temp_img_path)
+                finally:
+                    if os.path.exists(temp_img_path): os.remove(temp_img_path)
+            else:
+                raise Exception("Failed to download image from Cloudinary for Reddit.")
+        else:
+            # Submit Text-Only Post
+            subreddit.submit(title=title, selftext=full_text)
 
     finally:
         if conn: cursor.close(); conn.close()
@@ -615,26 +725,30 @@ async def publish_unified(post_id: int, request: UnifiedPublishRequest):
     
     for platform in request.platforms:
         try:
+            # Check for the platform and execute the corresponding processor
             if platform == "LinkedIn":
                 await process_linkedin(post_id) 
             elif platform == "Facebook":
                 await process_facebook(post_id)
             elif platform == "Instagram":
                 await process_instagram(post_id)
-            elif platform == "X":
+            elif platform in ["X", "Twitter/X"]: 
                 await process_x(post_id)
             elif platform == "YouTube":
                 await process_youtube(post_id)
             elif platform == "Threads":
                 await process_threads(post_id)
             elif platform == "Pinterest":
-                await process_pinterest(post_id, request.pinterest_board_id)     
-                
+                await process_pinterest(post_id, request.pinterest_board_id)
+            elif platform == "Reddit":                 
+                await process_reddit(post_id, request.reddit_subreddit)
+            else:
+                raise Exception(f"Unknown platform identifier: {platform}")
+
             log_publish_attempt(post_id, platform, "Success")
             results.append({"platform": platform, "status": "Success"})
             
         except SkipPublishException as skip_e:
-            # Handles our smart logic without flagging it as a red error
             skip_msg = str(skip_e)
             log_publish_attempt(post_id, platform, "Skipped", skip_msg)
             results.append({"platform": platform, "status": "Skipped", "error": skip_msg})

@@ -30,6 +30,9 @@ const Icons = {
   Pinterest: () => (
     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.663.967-2.911 2.168-2.911 1.024 0 1.518.769 1.518 1.688 0 1.029-.653 2.567-.992 3.992-.285 1.193.6 2.165 1.775 2.165 2.128 0 3.768-2.245 3.768-5.487 0-2.861-2.063-4.869-5.008-4.869-3.41 0-5.409 2.562-5.409 5.199 0 1.033.394 2.143.889 2.741.099.12.112.225.085.345-.09.375-.293 1.199-.334 1.363-.053.225-.172.271-.401.165-1.495-.69-2.433-2.878-2.433-4.646 0-3.776 2.748-7.252 7.951-7.252 4.182 0 7.436 2.981 7.436 6.953 0 4.156-2.619 7.505-6.261 7.505-1.22 0-2.368-.634-2.761-1.383l-.754 2.871c-.272 1.039-1.011 2.34-1.506 3.136 1.144.35 2.355.538 3.6.538 6.621 0 11.988-5.367 11.988-11.987C24 5.367 18.638 0 12.017 0z"/></svg>
   ),
+  Reddit: () => (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.701zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.688-.561-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.196-2.512-.73a.326.326 0 0 0-.232-.095z"/></svg>
+  ),
 };
 
 const PLATFORMS = [
@@ -40,7 +43,8 @@ const PLATFORMS = [
   { id: 'Twitter/X', icon: <Icons.X />, color: 'text-black', bg: 'hover:bg-gray-100 border-gray-300' },
   { id: 'YouTube', icon: <Icons.YouTube />, color: 'text-[#FF0000]', bg: 'hover:bg-red-50 border-red-200' },
   { id: 'Threads', icon: <Icons.Threads />, color: 'text-black', bg: 'hover:bg-gray-100 border-gray-300' },
-  { id: 'Pinterest', icon: <Icons.Pinterest />, color: 'text-[#E60023]', bg: 'hover:bg-red-50 border-red-200' }
+  { id: 'Pinterest', icon: <Icons.Pinterest />, color: 'text-[#E60023]', bg: 'hover:bg-red-50 border-red-200' },
+  { id: 'Reddit', icon: <Icons.Reddit />, color: 'text-[#FF4500]', bg: 'hover:bg-orange-50 border-orange-200' },
 ];
 
 const PINTEREST_BOARDS = [
@@ -64,6 +68,8 @@ const formatDate = (dateString: string) => {
 const isVideoMedia = (url: string) => /\.(mp4|mov|webm|avi|mkv)$/i.test(url) || url.includes('/video/upload/');
 
 export default function Home() {
+  const LOCKED_PLATFORMS = ['LinkedIn', 'Twitter/X', 'Reddit', 'Pinterest'];
+  const [redditSub, setRedditSub] = useState("shoutotb"); 
   const [baseText, setBaseText] = useState("");
   const [platform, setPlatform] = useState("General");
   const [isLoading, setIsLoading] = useState(false);
@@ -141,7 +147,8 @@ export default function Home() {
         body: JSON.stringify({
           platforms: selectedPlatforms,
           admin_password: adminPassword,
-          pinterest_board_id: selectedPlatforms.includes("Pinterest") ? selectedBoardId : null
+          pinterest_board_id: selectedPlatforms.includes("Pinterest") ? selectedBoardId : null,
+          reddit_subreddit: selectedPlatforms.includes("Reddit") ? redditSub : null
         })
       });
       
@@ -179,7 +186,10 @@ export default function Home() {
   };
 
   const togglePlatform = (platId: string) => {
-    setSelectedPlatforms(prev => prev.includes(platId) ? prev.filter(p => p !== platId) : [...prev, platId]);
+    if (LOCKED_PLATFORMS.includes(platId)) return; // Do nothing if locked
+    setSelectedPlatforms(prev => 
+      prev.includes(platId) ? prev.filter(p => p !== platId) : [...prev, platId]
+    );
   };
 
   const startEditing = (post: any) => {
@@ -251,9 +261,10 @@ export default function Home() {
 
       {/* --- LOGS MODAL OVERLAY --- */}
       {logsModalOpen !== null && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-lg w-full border border-slate-100 flex flex-col max-h-[85vh]">
-            <h3 className="text-2xl font-bold mb-4 text-slate-900">Publish Results</h3>
+        // Change z-50 to z-[60] so it sits ON TOP of the publish modal
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[60] p-4">
+          <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-lg w-full border border-slate-100 flex flex-col max-h-[85vh] animate-in fade-in zoom-in duration-200">
+            <h3 className="text-2xl font-bold mb-4 text-slate-900">Publish Report</h3>
             
             <div className="space-y-4 mb-6 overflow-y-auto custom-scrollbar pr-2">
               {logsModalOpen.length === 0 ? (
@@ -312,21 +323,57 @@ export default function Home() {
               <div>
                 <div className="flex justify-between items-end mb-3">
                   <label className="block text-sm font-bold text-slate-700">Select Networks</label>
-                  <button type="button" onClick={() => setSelectedPlatforms(['LinkedIn', 'Facebook', 'Instagram', 'Twitter/X', 'YouTube', 'Threads', 'Pinterest'])} className="text-xs text-indigo-600 font-bold hover:underline">Select All</button>
+                  <button 
+                    type="button" 
+                    onClick={() => setSelectedPlatforms(['Facebook', 'Instagram', 'YouTube', 'Threads'])} 
+                    className="text-xs text-indigo-600 font-bold hover:underline"
+                  >
+                    Select All
+                  </button>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">
                   {PLATFORMS.filter(p => p.id !== 'General').map(plat => {
                     const isSelected = selectedPlatforms.includes(plat.id);
+                    const isLocked = LOCKED_PLATFORMS.includes(plat.id);
+                    
                     return (
                       <button
                         key={plat.id}
                         type="button"
+                        disabled={isLocked}
                         onClick={() => togglePlatform(plat.id)}
-                        className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-left ${isSelected ? `border-indigo-600 bg-indigo-50 ${plat.color}` : 'border-slate-200 hover:border-slate-300 text-slate-500'}`}
+                        className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all text-left
+                          ${isLocked ? 'opacity-60 bg-slate-50 border-slate-100 cursor-not-allowed' : 
+                            isSelected ? `border-indigo-600 bg-indigo-50 ${plat.color}` : 'border-slate-200 hover:border-slate-300 text-slate-500'}
+                        `}
                       >
-                        {plat.icon}
-                        <span className={`text-sm font-semibold ${isSelected ? 'text-slate-900' : ''}`}>{plat.id}</span>
+                        <div className="flex items-center gap-2">
+                          {/* Grayscale the icon if locked */}
+                          <div className={isLocked ? "grayscale opacity-50" : ""}>
+                            {plat.icon}
+                          </div>
+                          
+                          <span className={`text-sm font-semibold ${isSelected && !isLocked ? 'text-slate-900' : 'text-slate-500'}`}>
+                            {plat.id}
+                          </span>
+
+                          {/* --- NEW: CLEAN LOCK ICON AFTER NAME --- */}
+                          {isLocked && (
+                            <svg className="w-3.5 h-3.5 text-slate-400 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                          )}
+                        </div>
+
+                        {/* Checkmark for selected active platforms */}
+                        {isSelected && !isLocked && (
+                          <div className="bg-indigo-600 rounded-full p-0.5">
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                        )}
                       </button>
                     )
                   })}
@@ -346,6 +393,24 @@ export default function Home() {
                         <option key={board.id} value={board.id}>{board.name}</option>
                       ))}
                     </select>
+                  </div>
+                )}
+                {/* DYNAMIC REDDIT SUB SELECTOR */}
+                {selectedPlatforms.includes('Reddit') && (
+                  <div className="mt-4 p-4 bg-orange-50 border border-orange-100 rounded-xl transition-all">
+                    <label className="block text-xs font-bold text-orange-800 mb-1.5 flex items-center gap-1">
+                      <Icons.Reddit /> Target Subreddit (without r/)
+                    </label>
+                    <div className="flex items-center bg-white border border-orange-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-orange-500 shadow-sm">
+                      <span className="bg-slate-50 text-slate-500 px-3 py-2.5 text-sm font-bold border-r border-orange-200">r/</span>
+                      <input 
+                        type="text" 
+                        value={redditSub} 
+                        onChange={(e) => setRedditSub(e.target.value)}
+                        className="w-full p-2.5 text-sm font-semibold outline-none text-slate-800"
+                        placeholder="Shoutotb"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -537,6 +602,15 @@ export default function Home() {
                             {post.created_at && (
                               <span className="text-xs font-semibold text-slate-400" title="Created On">
                                 • {formatDate(post.created_at)}
+                              </span>
+                            )}
+                            {/* --- NEW: MEDIA COUNT INDICATOR --- */}
+                            {post.media_files && post.media_files.length > 0 && (
+                              <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200 flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                {post.media_files.length}
                               </span>
                             )}
                           </div>
