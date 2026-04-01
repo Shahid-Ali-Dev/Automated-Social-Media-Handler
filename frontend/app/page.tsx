@@ -27,6 +27,9 @@ const Icons = {
   Threads: () => (
     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.012 2C6.48 2 2 6.48 2 12.012c0 5.531 4.48 10.012 10.012 10.012 5.531 0 10.012-4.48 10.012-10.012C22.024 6.48 17.543 2 12.012 2Zm3.472 14.545c-1.12.946-2.585 1.135-4.104.912-1.353-.2-2.502-.876-3.238-1.996-1.196-1.821-1.025-4.526.438-6.191 1.09-1.238 2.656-1.761 4.298-1.558 1.954.24 3.447 1.487 3.93 3.327.34 1.306.12 2.673-.62 3.824-.46.717-1.056 1.155-1.782 1.34-1.09.28-2.148-.206-2.508-1.258-.297-.866.074-1.874.622-2.597.43-.568.995-1.025 1.576-1.428.188-.13.38-.255.577-.37.31-.183.504-.543.433-.902-.09-.446-.494-.741-.954-.741-.663 0-1.29.35-1.666.92-.61.92-.816 2.072-.651 3.16.155 1.025.753 1.952 1.637 2.39 1.096.543 2.454.346 3.366-.453.642-.562.981-1.328 1.05-2.176.082-1.018-.216-1.996-.79-2.8-.846-1.185-2.197-1.802-3.65-1.685-1.574.126-2.99 1.022-3.702 2.433-.706 1.396-.706 3.033 0 4.43.712 1.411 2.128 2.306 3.702 2.433 1.085.087 2.164-.202 3.064-.787.524-.342.712-1.042.42-1.602-.29-.56-1.002-.74-1.565-.398Z"/></svg>
   ),
+  Pinterest: () => (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.663.967-2.911 2.168-2.911 1.024 0 1.518.769 1.518 1.688 0 1.029-.653 2.567-.992 3.992-.285 1.193.6 2.165 1.775 2.165 2.128 0 3.768-2.245 3.768-5.487 0-2.861-2.063-4.869-5.008-4.869-3.41 0-5.409 2.562-5.409 5.199 0 1.033.394 2.143.889 2.741.099.12.112.225.085.345-.09.375-.293 1.199-.334 1.363-.053.225-.172.271-.401.165-1.495-.69-2.433-2.878-2.433-4.646 0-3.776 2.748-7.252 7.951-7.252 4.182 0 7.436 2.981 7.436 6.953 0 4.156-2.619 7.505-6.261 7.505-1.22 0-2.368-.634-2.761-1.383l-.754 2.871c-.272 1.039-1.011 2.34-1.506 3.136 1.144.35 2.355.538 3.6.538 6.621 0 11.988-5.367 11.988-11.987C24 5.367 18.638 0 12.017 0z"/></svg>
+  ),
 };
 
 const PLATFORMS = [
@@ -37,8 +40,19 @@ const PLATFORMS = [
   { id: 'Twitter/X', icon: <Icons.X />, color: 'text-black', bg: 'hover:bg-gray-100 border-gray-300' },
   { id: 'YouTube', icon: <Icons.YouTube />, color: 'text-[#FF0000]', bg: 'hover:bg-red-50 border-red-200' },
   { id: 'Threads', icon: <Icons.Threads />, color: 'text-black', bg: 'hover:bg-gray-100 border-gray-300' },
+  { id: 'Pinterest', icon: <Icons.Pinterest />, color: 'text-[#E60023]', bg: 'hover:bg-red-50 border-red-200' }
 ];
 
+const PINTEREST_BOARDS = [
+  { name: "Social", id: "937593284863932831" },
+  { name: "AI Video", id: "937593284863735787" },
+  { name: "Content Strategy", id: "937593284863932856" },
+  { name: "Marketing Phycology", id: "937593284863984585" },
+  { name: "Media post", id: "937593284863961488" },
+  { name: "Men's Traditional Wear", id: "937593284863726036" },
+  { name: "Projects to try", id: "937593284863740702" },
+  { name: "Shoutotb Logo", id: "937593284863726486" }
+];
 // Helper to format dates cleanly
 const formatDate = (dateString: string) => {
   if (!dateString) return '';
@@ -68,6 +82,7 @@ export default function Home() {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [adminPassword, setAdminPassword] = useState("");
   const [logsModalOpen, setLogsModalOpen] = useState<any[] | null>(null);
+  const [selectedBoardId, setSelectedBoardId] = useState("937593284863932831"); 
 
   useEffect(() => { fetchHistory(); }, []);
 
@@ -125,7 +140,8 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           platforms: selectedPlatforms,
-          admin_password: adminPassword
+          admin_password: adminPassword,
+          pinterest_board_id: selectedPlatforms.includes("Pinterest") ? selectedBoardId : null
         })
       });
       
@@ -296,7 +312,7 @@ export default function Home() {
               <div>
                 <div className="flex justify-between items-end mb-3">
                   <label className="block text-sm font-bold text-slate-700">Select Networks</label>
-                  <button type="button" onClick={() => setSelectedPlatforms(['LinkedIn', 'Facebook', 'Instagram', 'Twitter/X', 'YouTube', 'Threads'])} className="text-xs text-indigo-600 font-bold hover:underline">Select All</button>
+                  <button type="button" onClick={() => setSelectedPlatforms(['LinkedIn', 'Facebook', 'Instagram', 'Twitter/X', 'YouTube', 'Threads', 'Pinterest'])} className="text-xs text-indigo-600 font-bold hover:underline">Select All</button>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-3">
@@ -315,6 +331,23 @@ export default function Home() {
                     )
                   })}
                 </div>
+                {/* DYNAMIC PINTEREST BOARD SELECTOR */}
+                {selectedPlatforms.includes('Pinterest') && (
+                  <div className="mt-4 p-4 bg-red-50 border border-red-100 rounded-xl transition-all">
+                    <label className="block text-xs font-bold text-red-800 mb-1.5 flex items-center gap-1">
+                      <Icons.Pinterest /> Target Pinterest Board
+                    </label>
+                    <select 
+                      value={selectedBoardId} 
+                      onChange={(e) => setSelectedBoardId(e.target.value)}
+                      className="w-full p-2.5 text-sm font-semibold border border-red-200 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white text-slate-800 shadow-sm cursor-pointer"
+                    >
+                      {PINTEREST_BOARDS.map(board => (
+                        <option key={board.id} value={board.id}>{board.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -406,6 +439,7 @@ export default function Home() {
               )}
             </div>
           </div>
+
 
           {/* RIGHT COLUMN: THE HISTORY FEED */}
           <div className="lg:col-span-7">

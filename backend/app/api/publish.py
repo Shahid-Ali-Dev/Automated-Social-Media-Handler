@@ -1,9 +1,11 @@
 import os
 import tempfile
 import requests
+import base64
+from typing import List, Optional
+from pydantic import BaseModel
 import time
 from datetime import datetime
-from typing import List
 from pydantic import BaseModel
 import tweepy
 from fastapi import APIRouter, HTTPException
@@ -41,6 +43,7 @@ client = tweepy.Client(
 class UnifiedPublishRequest(BaseModel):
     platforms: List[str]
     admin_password: str
+    pinterest_board_id: Optional[str] = None
 
 class SkipPublishException(Exception):
     pass
@@ -166,6 +169,82 @@ def get_smart_threads_token():
             print("Silent refresh successful! Timer reset to Day 0.")
         else:
             print(f"Warning: Token refresh failed: {response.text}")
+            
+    cursor.close()
+    conn.close()
+    
+    return token_to_use
+
+def get_smart_pinterest_token():
+    """Fetches the Pinterest token from the DB. Refreshes it silently if >= 25 days old."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Fetch both tokens using our clever dual-row hack
+    cursor.execute("SELECT access_token, updated_at FROM api_tokens WHERE platform = 'Pinterest_Access';")
+    access_record = cursor.fetchone()
+    
+    cursor.execute("SELECT access_token FROM api_tokens WHERE platform = 'Pinterest_Refresh';")
+    refresh_record = cursor.fetchone()
+    
+    # If not in DB, grab the initial ones from .env and save them
+    if not access_record or not refresh_record:
+        acc_token = os.environ.get("PINTEREST_INITIAL_ACCESS_TOKEN")
+        ref_token = os.environ.get("PINTEREST_INITIAL_REFRESH_TOKEN")
+        
+        # Insert them safely
+        cursor.execute("INSERT INTO api_tokens (platform, access_token) VALUES ('Pinterest_Access', %s) ON CONFLICT (platform) DO UPDATE SET access_token = EXCLUDED.access_token;", (acc_token,))
+        cursor.execute("INSERT INTO api_tokens (platform, access_token) VALUES ('Pinterest_Refresh', %s) ON CONFLICT (platform) DO UPDATE SET access_token = EXCLUDED.access_token;", (ref_token,))
+        conn.commit()
+        
+        token_to_use = acc_token
+        refresh_to_use = ref_token
+        updated_at = datetime.now()
+    else:
+        token_to_use = access_record['access_token']
+        refresh_to_use = refresh_record['access_token']
+        updated_at = access_record['updated_at']
+        
+    # THE SMART REFRESH LOGIC
+    days_old = (datetime.now() - updated_at).days
+    
+    # Pinterest access tokens expire at 30 days. We refresh safely at day 25.
+    if days_old >= 25:
+        print("Pinterest token is 25+ days old. Initiating silent refresh...")
+        
+        app_id = os.environ.get("PINTEREST_APP_ID")
+        app_secret = os.environ.get("PINTEREST_APP_SECRET")
+        
+        # Pinterest requires Basic Auth encoding for refreshes
+        auth_string = f"{app_id}:{app_secret}"
+        b64_auth = base64.b64encode(auth_string.encode()).decode()
+        
+        headers = {
+            "Authorization": f"Basic {b64_auth}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_to_use
+        }
+        
+        response = requests.post("https://api.pinterest.com/v5/oauth/token", headers=headers, data=data)
+        
+        if response.status_code == 200:
+            new_data = response.json()
+            new_acc_token = new_data.get("access_token")
+            new_ref_token = new_data.get("refresh_token") # Pinterest gives us a new refresh token too!
+            
+            # Update the DB with the new tokens and reset the timer
+            cursor.execute("UPDATE api_tokens SET access_token = %s, updated_at = CURRENT_TIMESTAMP WHERE platform = 'Pinterest_Access';", (new_acc_token,))
+            if new_ref_token:
+                cursor.execute("UPDATE api_tokens SET access_token = %s, updated_at = CURRENT_TIMESTAMP WHERE platform = 'Pinterest_Refresh';", (new_ref_token,))
+            
+            conn.commit()
+            token_to_use = new_acc_token
+            print("Pinterest silent refresh successful! Timer reset to Day 0.")
+        else:
+            print(f"Warning: Pinterest Token refresh failed: {response.text}")
             
     cursor.close()
     conn.close()
@@ -391,7 +470,55 @@ async def process_threads(post_id: int):
         
     finally:
         if conn: cursor.close(); conn.close()
+
+async def process_pinterest(post_id: int, board_id: str): # <-- ADD ARGUMENT
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
+        post = cursor.fetchone()
+        cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s;", (post_id,))
+        media_records = cursor.fetchall()
+
+        image_url = next((m['media_url'] for m in media_records if not is_video(m['media_url'])), None)
+
+        if not image_url:
+            raise SkipPublishException("Smart Skip: Pinterest requires an image. None were found.")
+
+        if not board_id:
+            raise Exception("A valid Pinterest Board ID must be provided.")
+
+        title = post['enhanced_title'][:100] 
+        tags_str = " ".join([f"#{tag}" for tag in post['hashtags']]) if post['hashtags'] else ""
+        description = f"{post['enhanced_description']}\n\n{tags_str}"[:500] 
+
+        access_token = get_smart_pinterest_token()
+        # Removed the os.environ.get board_id line here!
+
+        url = "https://api.pinterest.com/v5/pins"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
         
+        payload = {
+            "title": title,
+            "description": description,
+            "board_id": board_id, # <-- USES THE PASSED ARGUMENT
+            "media_source": {
+                "source_type": "image_url",
+                "url": image_url
+            }
+        }
+
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if response.status_code != 201:
+            raise Exception(f"Pinterest API Error: {response.text}")
+
+    finally:
+        if conn: cursor.close(); conn.close()
+
 async def process_youtube(post_id: int):
     conn = get_db_connection()
     try:
@@ -498,8 +625,10 @@ async def publish_unified(post_id: int, request: UnifiedPublishRequest):
                 await process_x(post_id)
             elif platform == "YouTube":
                 await process_youtube(post_id)
-            elif platform == "Threads":             
-                await process_threads(post_id)        
+            elif platform == "Threads":
+                await process_threads(post_id)
+            elif platform == "Pinterest":
+                await process_pinterest(post_id, request.pinterest_board_id)     
                 
             log_publish_attempt(post_id, platform, "Success")
             results.append({"platform": platform, "status": "Success"})
