@@ -12,9 +12,12 @@ load_dotenv()
 router = APIRouter()
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
+# --- REQUEST MODELS ---
 class PromptRequest(BaseModel):
     base_text: str
     platform: str = "General"
+    image_base64: Optional[str] = None  # NEW: Expect an optional image string
+
 class ManualPostRequest(BaseModel):
     platform: str
     title: str
@@ -25,102 +28,153 @@ class UpdatePostRequest(BaseModel):
     title: str
     description: str
     hashtags: List[str]
+    short_text: str  # NEW: Allow frontend to update the short version
 
-# 1. Route for updating an existing post
+# --- HELPER: AUTO-SUMMARIZER ---
+def generate_short_version(title: str, description: str, hashtags: List[str]) -> str:
+    """Uses AI to condense the post for X/Bluesky. Falls back to slicing if AI fails."""
+    tags_str = " ".join([f"#{t}" for t in hashtags]) if hashtags else ""
+    full_fallback = f"{title}\n\n{description}\n\n{tags_str}"
+    
+    # If it's already under 280, don't waste AI tokens!
+    if len(full_fallback) <= 280:
+        return full_fallback
+
+    prompt = f"""
+    Rewrite the following social media post to be strictly between 200-280 characters for Twitter/Bluesky.
+    Tone: Human, witty, slightly humorous, and engaging. 
+    Format: Use a catchy hook, a brief summary, and 1-3 key hashtags.
+    
+    Title: {title}
+    Description: {description}
+    Hashtags: {tags_str}
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.3-70b-versatile",
+            max_tokens=100,
+            temperature=0.7
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"AI Shortening failed, using slice fallback: {e}")
+        # HARD FALLBACK: Slice the description to fit exactly 280 chars
+        available_space = 280 - len(title) - len(tags_str) - 10 
+        truncated_desc = description[:max(0, available_space)] + "..."
+        return f"{title}\n\n{truncated_desc}\n\n{tags_str}"
+
+# --- ROUTES ---
 @router.put("/posts/{post_id}")
 async def update_post(post_id: int, request: UpdatePostRequest):
-    """Updates the text content of a saved post."""
+    """Updates the main text AND the short text of a saved post."""
     conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=500, detail="Database connection failed")
+    if not conn: raise HTTPException(status_code=500, detail="Database connection failed")
     
     try:
         cursor = conn.cursor()
         update_query = """
         UPDATE posts 
-        SET enhanced_title = %s, enhanced_description = %s, hashtags = %s 
+        SET enhanced_title = %s, enhanced_description = %s, hashtags = %s, short_text = %s
         WHERE id = %s RETURNING id;
         """
         cursor.execute(update_query, (
             request.title, 
             request.description, 
-            request.hashtags, 
+            request.hashtags,
+            request.short_text, # Save manual short text edits
             post_id
         ))
         updated = cursor.fetchone()
         conn.commit()
-        
-        if not updated:
-            raise HTTPException(status_code=404, detail="Post not found")
+        if not updated: raise HTTPException(status_code=404, detail="Post not found")
         return {"message": "Post updated successfully"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
     finally:
-        cursor.close()
-        conn.close()
+        cursor.close(); conn.close()
 
-# 2. Route for manually saving a post without AI
+
 @router.post("/posts")
 async def create_manual_post(request: ManualPostRequest):
-    """Saves a post directly to the database without Groq AI enhancement."""
+    """Saves a manual post and automatically generates its short version."""
+    short_text = generate_short_version(request.title, request.description, request.hashtags)
+    
     conn = get_db_connection()
-    if not conn:
-        raise HTTPException(status_code=500, detail="Database connection failed")
+    if not conn: raise HTTPException(status_code=500, detail="Database connection failed")
     
     try:
         cursor = conn.cursor()
         insert_query = """
-        INSERT INTO posts (platform, original_prompt, enhanced_title, enhanced_description, hashtags)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO posts (platform, original_prompt, enhanced_title, enhanced_description, hashtags, short_text)
+        VALUES (%s, %s, %s, %s, %s, %s)
         RETURNING id;
         """
         cursor.execute(insert_query, (
             request.platform,
-            "Manual Entry", # No original prompt since it wasn't AI generated
+            "Manual Entry", 
             request.title,
             request.description,
-            request.hashtags
+            request.hashtags,
+            short_text
         ))
         post_id = cursor.fetchone()['id']
         conn.commit()
         return {"message": "Post saved manually", "id": post_id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
     finally:
-        cursor.close()
-        conn.close()
+        cursor.close(); conn.close()
         
+
 @router.post("/enhance")
 async def enhance_post(request: PromptRequest):
+    """Enhances text with AI, analyzing images for context if provided."""
+    
     system_prompt = f"""
     You are an expert social media manager. Your job is to enhance the provided text for {request.platform}.
+    If an image is provided, analyze its contents, vibe, and details, and weave that context naturally into the post.
     Rules:
-    1. DO NOT add any new facts, claims, or external information. Only enhance the style, grammar, and engagement.
-    2. You MUST output your response strictly as a valid JSON object with exactly these three keys: 'title', 'description', and 'hashtags'.
+    1. DO NOT add any new facts that aren't supported by the text or image.
+    2. MUST output strictly as a valid JSON object with keys: 'title', 'description', and 'hashtags'.
     3. 'hashtags' should be a list of strings.
     """
-
+    
     try:
-        # 1. Generate content with Groq
+        # 🔥 SMART VISION LOGIC: Switch models and payload format if an image exists
+        if request.image_base64:
+            # UPGRADED: Using Groq's new Llama 4 Scout Vision Model
+            model_to_use = "meta-llama/llama-4-scout-17b-16e-instruct" 
+            user_content = [
+                {"type": "text", "text": f"Enhance this text based on the attached image: {request.base_text}"},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{request.image_base64}"}}
+            ]
+        else:
+            model_to_use = "llama-3.1-8b-instant" # Standard lightning-fast text model
+            user_content = f"Enhance this text: {request.base_text}"
+
         response = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Enhance this text: {request.base_text}"}
+                {"role": "user", "content": user_content}
             ],
-            model="llama-3.1-8b-instant",
-            temperature=0.2,
+            model=model_to_use,
+            temperature=0.4, # Slightly higher to allow creative image interpretation
             response_format={"type": "json_object"}
         )
         
         enhanced_content = json.loads(response.choices[0].message.content)
         
-        # 2. Save to Neon Database
+        # Automatically create the short version
+        short_text = generate_short_version(
+            enhanced_content.get('title', ''), 
+            enhanced_content.get('description', ''), 
+            enhanced_content.get('hashtags', [])
+        )
+        
         conn = get_db_connection()
         if conn:
             cursor = conn.cursor()
             insert_query = """
-            INSERT INTO posts (platform, original_prompt, enhanced_title, enhanced_description, hashtags)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO posts (platform, original_prompt, enhanced_title, enhanced_description, hashtags, short_text)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id;
             """
             cursor.execute(insert_query, (
@@ -128,19 +182,20 @@ async def enhance_post(request: PromptRequest):
                 request.base_text,
                 enhanced_content.get('title'),
                 enhanced_content.get('description'),
-                enhanced_content.get('hashtags')
+                enhanced_content.get('hashtags'),
+                short_text
             ))
             post_id = cursor.fetchone()['id']
             conn.commit()
             cursor.close()
             conn.close()
             
-            # Attach the database ID to the response
             enhanced_content['db_id'] = post_id
             
         return enhanced_content
-
     except Exception as e:
+        # 🔥 This will print the EXACT Groq error to your backend terminal
+        print(f"Groq API Error: {str(e)}") 
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.get("/history")

@@ -33,6 +33,12 @@ const Icons = {
   Reddit: () => (
     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.701zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.688-.561-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.196-2.512-.73a.326.326 0 0 0-.232-.095z"/></svg>
   ),
+  Bluesky: () => (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 10.8c-1.087-2.114-4.046-5.05-6.912-5.05C2.183 5.75 0 6.5 0 9.75c0 1.938 1.125 5.232 2.109 6.402.922 1.093 2.266 1.562 3.328 1.484 2.734-.195 4.336-1.551 5.446-2.583.514-.474.966-.964 1.117-1.113.15.149.603.639 1.117 1.113 1.11 1.032 2.712 2.388 5.446 2.583 1.062.078 2.406-.39 3.328-1.484.984-1.17 2.109-4.464 2.109-6.402 0-3.25-2.183-4-5.088-4-2.866 0-5.825 2.936-6.912 5.05Z"/></svg>
+  ),
+  Discord: () => (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg>
+  ),
 };
 
 const PLATFORMS = [
@@ -45,6 +51,8 @@ const PLATFORMS = [
   { id: 'Threads', icon: <Icons.Threads />, color: 'text-black', bg: 'hover:bg-gray-100 border-gray-300' },
   { id: 'Pinterest', icon: <Icons.Pinterest />, color: 'text-[#E60023]', bg: 'hover:bg-red-50 border-red-200' },
   { id: 'Reddit', icon: <Icons.Reddit />, color: 'text-[#FF4500]', bg: 'hover:bg-orange-50 border-orange-200' },
+  { id: 'Bluesky', icon: <Icons.Bluesky />, color: 'text-[#0085ff]', bg: 'hover:bg-blue-50 border-blue-200' },
+  { id: 'Discord', icon: <Icons.Discord />, color: 'text-[#5865F2]', bg: 'hover:bg-indigo-50 border-indigo-200' },
 ];
 
 const PINTEREST_BOARDS = [
@@ -68,6 +76,8 @@ const formatDate = (dateString: string) => {
 const isVideoMedia = (url: string) => /\.(mp4|mov|webm|avi|mkv)$/i.test(url) || url.includes('/video/upload/');
 
 export default function Home() {
+  const [inspirationImage, setInspirationImage] = useState<string | null>(null);
+  const [inspirationFile, setInspirationFile] = useState<File | null>(null);
   const LOCKED_PLATFORMS = ['LinkedIn', 'Twitter/X', 'Reddit', 'Pinterest'];
   const [redditSub, setRedditSub] = useState("shoutotb"); 
   const [baseText, setBaseText] = useState("");
@@ -82,7 +92,7 @@ export default function Home() {
   const [manualDesc, setManualDesc] = useState("");
   const [manualTags, setManualTags] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState({ title: "", description: "", hashtags: "" });
+  const [editForm, setEditForm] = useState({ title: "", description: "", hashtags: "", short_text: "" });
   const [isPublishing, setIsPublishing] = useState<number | null>(null);
   const [publishModalOpen, setPublishModalOpen] = useState<number | null>(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
@@ -103,7 +113,42 @@ export default function Home() {
     } catch (error) { console.error("Failed to fetch history:", error); } 
     finally { setIsFetchingHistory(false); }
   };
-
+const handleImageToAPI = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setInspirationFile(file); 
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        // --- SMART COMPRESSOR: Shrink image to prevent Groq's 4MB limit crash ---
+        const img = new window.Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          // 800px is perfectly large enough for the AI to understand the context
+          const MAX_WIDTH = 800; 
+          const scaleSize = MAX_WIDTH / img.width;
+          
+          // Only resize if the image is actually larger than 800px
+          if (img.width > MAX_WIDTH) {
+            canvas.width = MAX_WIDTH;
+            canvas.height = img.height * scaleSize;
+          } else {
+            canvas.width = img.width;
+            canvas.height = img.height;
+          }
+          
+          const ctx = canvas.getContext("2d");
+          if (ctx) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          
+          // Compress to JPEG at 70% quality and extract the raw base64 string
+          const base64String = canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
+          setInspirationImage(base64String);
+        };
+        img.src = reader.result as string;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
   const handleEnhance = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -111,12 +156,43 @@ export default function Home() {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/enhance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ base_text: baseText, platform: platform }),
+        body: JSON.stringify({ 
+          base_text: baseText, 
+          platform: platform,
+          image_base64: inspirationImage 
+        }),
       });
-      if (response.ok) { setBaseText(""); fetchHistory(); } 
-      else { alert("Generation failed."); }
-    } catch (error) { alert("Something went wrong."); } 
-    finally { setIsLoading(false); }
+      
+      if (response.ok) { 
+        const data = await response.json(); // Get the generated post data
+        
+        // 🔥 AUTO-UPLOAD THE HIGH-QUALITY IMAGE
+        if (inspirationFile && data.db_id) {
+          const formData = new FormData();
+          formData.append("post_id", data.db_id.toString());
+          formData.append("files", inspirationFile); 
+          
+          // Silently upload to Cloudinary in the background
+          await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/media/upload`, {
+            method: "POST",
+            body: formData
+          });
+        }
+
+        // Reset the form completely
+        setBaseText(""); 
+        setInspirationImage(null); 
+        setInspirationFile(null); 
+        fetchHistory(); 
+        
+      } else { 
+        alert("Generation failed."); 
+      }
+    } catch (error) { 
+      alert("Something went wrong."); 
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
   const handleManualSave = async (e: React.FormEvent) => {
@@ -193,9 +269,14 @@ export default function Home() {
   };
 
   const startEditing = (post: any) => {
-    setEditingId(post.id);
-    setEditForm({ title: post.enhanced_title, description: post.enhanced_description, hashtags: post.hashtags ? post.hashtags.join(", ") : "" });
-  };
+  setEditingId(post.id);
+  setEditForm({ 
+    title: post.enhanced_title, 
+    description: post.enhanced_description, 
+    hashtags: post.hashtags ? post.hashtags.join(", ") : "",
+    short_text: post.short_text || "" // NEW
+  });
+};
 
   const saveEdit = async (id: number) => {
     const tagsArray = editForm.hashtags.split(",").map(tag => tag.trim()).filter(tag => tag !== "");
@@ -203,7 +284,7 @@ export default function Home() {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/posts/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: editForm.title, description: editForm.description, hashtags: tagsArray }),
+        body: JSON.stringify({ title: editForm.title, description: editForm.description, hashtags: tagsArray, short_text: editForm.short_text }) 
       });
       if (response.ok) { setEditingId(null); fetchHistory(); }
     } catch (error) { console.error(error); }
@@ -325,7 +406,7 @@ export default function Home() {
                   <label className="block text-sm font-bold text-slate-700">Select Networks</label>
                   <button 
                     type="button" 
-                    onClick={() => setSelectedPlatforms(['Facebook', 'Instagram', 'YouTube', 'Threads'])} 
+                    onClick={() => setSelectedPlatforms(['Facebook', 'Instagram', 'YouTube', 'Threads', 'Bluesky', 'Discord'])} 
                     className="text-xs text-indigo-600 font-bold hover:underline"
                   >
                     Select All
@@ -479,6 +560,34 @@ export default function Home() {
                     <label className="block text-sm font-bold text-slate-700 mb-2">Draft Idea</label>
                     <textarea value={baseText} onChange={(e) => setBaseText(e.target.value)} placeholder="Type your rough idea here..." className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl h-36 focus:ring-2 focus:ring-indigo-500 outline-none resize-none transition-all" required />
                   </div>
+                  
+                  {/* --- NEW: IMAGE INSPIRATION FIELD --- */}
+                  <div className="bg-indigo-50/50 border border-indigo-100 p-3.5 rounded-xl transition-all">
+                    <label className="block text-xs font-bold text-indigo-800 mb-2 flex items-center gap-1.5">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                      AI Image Context (Optional)
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <label className="cursor-pointer bg-white text-indigo-600 px-4 py-2 rounded-lg text-sm font-bold border border-indigo-200 hover:bg-indigo-50 transition-colors shadow-sm">
+                        {inspirationImage ? "Image Attached ✓" : "Upload Image"}
+                        <input type="file" accept="image/*" className="hidden" onChange={handleImageToAPI} />
+                      </label>
+                      {inspirationImage && (
+                        <button 
+                          type="button" 
+                          onClick={() => { 
+                            setInspirationImage(null); 
+                            setInspirationFile(null); 
+                          }} 
+                          className="text-red-500 text-xs font-bold hover:underline"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2 font-medium">Upload a photo for the AI to "read" and extract details for your post.</p>
+                  </div>
+
                   <button type="submit" disabled={isLoading} className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold hover:bg-indigo-700 disabled:bg-indigo-300 shadow-md shadow-indigo-200 transition-all">
                     {isLoading ? "Generating Magic..." : "Enhance & Save to Drafts"}
                   </button>
@@ -616,12 +725,30 @@ export default function Home() {
                           </div>
 
                           {editingId === post.id ? (
-                            <div className="space-y-3 mt-1 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                              <input type="text" value={editForm.title} onChange={(e) => setEditForm({...editForm, title: e.target.value})} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold bg-white text-slate-900" />
-                              <textarea value={editForm.description} onChange={(e) => setEditForm({...editForm, description: e.target.value})} className="w-full p-2 border border-slate-300 rounded-lg h-32 focus:ring-2 focus:ring-indigo-500 outline-none text-sm resize-none bg-white text-slate-700" />
-                              <input type="text" value={editForm.hashtags} onChange={(e) => setEditForm({...editForm, hashtags: e.target.value})} className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white text-slate-700" placeholder="Comma separated hashtags" />
+                            <div className="space-y-4 mt-1 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                              <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 block">Main Post (FB, IG, LI, Pinterest)</label>
+                                <input type="text" value={editForm.title} onChange={(e) => setEditForm({...editForm, title: e.target.value})} className="w-full p-2 border border-slate-300 rounded-t-lg outline-none font-bold bg-white text-slate-900 border-b-0" />
+                                <textarea value={editForm.description} onChange={(e) => setEditForm({...editForm, description: e.target.value})} className="w-full p-2 border border-slate-300 h-28 outline-none text-sm resize-none bg-white text-slate-700 border-b-0" />
+                                <input type="text" value={editForm.hashtags} onChange={(e) => setEditForm({...editForm, hashtags: e.target.value})} className="w-full p-2 border border-slate-300 rounded-b-lg outline-none text-sm bg-white text-slate-700" placeholder="Comma separated hashtags" />
+                              </div>
+
+                              <div>
+                                <label className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1 block flex items-center gap-1">
+                                  Short Version (For X & Bluesky)
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${editForm.short_text.length > 280 ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'}`}>
+                                    {editForm.short_text.length}/280
+                                  </span>
+                                </label>
+                                <textarea 
+                                  value={editForm.short_text} 
+                                  onChange={(e) => setEditForm({...editForm, short_text: e.target.value})} 
+                                  className="w-full p-2 border border-blue-200 rounded-lg h-24 outline-none text-sm resize-none bg-blue-50/30 text-slate-800 focus:ring-2 focus:ring-blue-500 transition-all" 
+                                />
+                              </div>
+
                               <div className="flex gap-2 pt-2">
-                                <button onClick={() => saveEdit(post.id)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700">Save Changes</button>
+                                <button onClick={() => saveEdit(post.id)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 shadow-sm">Save All Changes</button>
                                 <button onClick={() => setEditingId(null)} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-300">Cancel</button>
                               </div>
                             </div>

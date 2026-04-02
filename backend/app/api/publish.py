@@ -3,6 +3,7 @@ import tempfile
 import praw
 import requests
 import base64
+from atproto import Client as BskyClient
 from typing import List, Optional
 from pydantic import BaseModel
 import time
@@ -69,7 +70,7 @@ def log_publish_attempt(post_id, platform, status, error_msg=""):
         finally:
             cursor.close()
             conn.close()
-
+    
 def is_video(url: str) -> bool:
     """Checks if the Cloudinary URL is a video file."""
     if not url: return False
@@ -284,7 +285,10 @@ async def process_x(post_id: int):
                     finally:
                         if os.path.exists(tmp_path): os.remove(tmp_path)
 
-        tweet_text = format_tweet_text(post['enhanced_title'], post['enhanced_description'], post['hashtags'])
+        # Try to use the AI short text first. If it's an old post without one, fallback to the slicer.
+        tweet_text = post.get('short_text') 
+        if not tweet_text:
+            tweet_text = format_tweet_text(post['enhanced_title'], post['enhanced_description'], post['hashtags'])
 
         # V2 Tweet Creation
         response = client.create_tweet(text=tweet_text, media_ids=media_ids if media_ids else None)
@@ -561,7 +565,7 @@ async def process_pinterest(post_id: int, board_id: str):
         payload = {
             "title": title,
             "description": description,
-            "board_id": board_id, # <-- USES THE PASSED ARGUMENT
+            "board_id": board_id, 
             "media_source": {
                 "source_type": "image_url",
                 "url": image_url
@@ -625,6 +629,98 @@ async def process_reddit(post_id: int, subreddit_name: str):
         else:
             # Submit Text-Only Post
             subreddit.submit(title=title, selftext=full_text)
+
+    finally:
+        if conn: cursor.close(); conn.close()
+
+async def process_bluesky(post_id: int):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
+        post = cursor.fetchone()
+        cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 4;", (post_id,))
+        media_records = cursor.fetchall()
+
+        # 1. Login
+        client = BskyClient()
+        client.login(os.environ.get("BLUESKY_HANDLE"), os.environ.get("BLUESKY_APP_PASSWORD"))
+
+        # 2. Smart AI Text Handling
+        title = post['enhanced_title']
+        desc = post['enhanced_description']
+        hashtags = post['hashtags']
+        
+        # Initial draft
+        tags_str = " ".join([f"#{t}" for t in hashtags]) if hashtags else ""
+        full_text = f"{title}\n\n{desc}\n\n{tags_str}"
+
+        # If too long, use the AI short version. If it doesn't exist, hard-slice it.
+        if len(full_text) > 300:
+            print("Post too long for Bluesky. Triggering AI Condenser...")
+            full_text = post.get('short_text') or full_text[:290]
+
+        # 3. Handle Media & Post
+        if media_records:
+            img_url = media_records[0]['media_url']
+            img_res = requests.get(img_url)
+            if img_res.status_code == 200:
+                client.send_image(
+                    text=full_text,
+                    image=img_res.content,
+                    image_alt=title
+                )
+            else:
+                raise Exception("Failed to download image for Bluesky")
+        else:
+            client.send_post(text=full_text)
+
+    finally:
+        if conn: cursor.close(); conn.close()
+
+async def process_discord(post_id: int):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
+        post = cursor.fetchone()
+        
+        # Discord allows up to 10 embeds per message
+        cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 4;", (post_id,))
+        media_records = cursor.fetchall()
+
+        webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
+        if not webhook_url:
+            raise Exception("Discord Webhook URL is missing from .env")
+
+        # Format Text - Discord uses Markdown, so we can bold the title!
+        tags_str = " ".join([f"#{t}" for t in post['hashtags']]) if post['hashtags'] else ""
+        full_text = f"@everyone\n\n**{post['enhanced_title']}**\n\n{post['enhanced_description']}\n\n{tags_str}"
+
+        payload = {
+            "content": full_text,
+            "username": "Shout OTB Publisher" 
+        }
+
+        # Handle Media beautifully using Discord's Native Embeds
+        if media_records:
+            embeds = []
+            for record in media_records:
+                if is_video(record['media_url']):
+                    # Discord embeds don't support video files directly via API, 
+                    # so we append the video URL to the text, and Discord will auto-preview it.
+                    payload["content"] += f"\n{record['media_url']}"
+                else:
+                    # Images get beautifully embedded
+                    embeds.append({"image": {"url": record['media_url']}})
+            
+            if embeds:
+                payload["embeds"] = embeds
+
+        res = requests.post(webhook_url, json=payload)
+        
+        if res.status_code not in [200, 204]:
+            raise Exception(f"Discord API Error: {res.text}")
 
     finally:
         if conn: cursor.close(); conn.close()
@@ -708,6 +804,7 @@ async def process_youtube(post_id: int):
         if conn: 
             cursor.close()
             conn.close()
+
         
 # ==========================================
 # 4. API ENDPOINTS
@@ -736,6 +833,10 @@ async def publish_unified(post_id: int, request: UnifiedPublishRequest):
                 await process_x(post_id)
             elif platform == "YouTube":
                 await process_youtube(post_id)
+            elif platform == "Bluesky":           
+                await process_bluesky(post_id)     
+            elif platform == "Discord":       
+                await process_discord(post_id)        
             elif platform == "Threads":
                 await process_threads(post_id)
             elif platform == "Pinterest":

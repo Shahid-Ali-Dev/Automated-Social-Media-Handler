@@ -62,10 +62,12 @@ def init_db():
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """
+    
     cursor.execute(create_tokens_table_query)
     cursor.execute(create_logs_table_query)
     cursor.execute(create_table_query)
     cursor.execute(create_media_table_query)
+    cursor.execute("ALTER TABLE posts ADD COLUMN IF NOT EXISTS short_text TEXT;")
     conn.commit()
     cursor.close()
     conn.close()
