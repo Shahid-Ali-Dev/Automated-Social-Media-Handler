@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
-
+from mastodon import Mastodon
 
 load_dotenv()
 
@@ -633,6 +633,54 @@ async def process_reddit(post_id: int, subreddit_name: str):
     finally:
         if conn: cursor.close(); conn.close()
 
+async def process_mastodon(post_id: int):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
+        post = cursor.fetchone()
+        
+        # Mastodon allows up to 4 media attachments
+        cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 4;", (post_id,))
+        media_records = cursor.fetchall()
+
+        # 1. Initialize the Client
+        mastodon = Mastodon(
+            access_token=os.environ.get("MASTODON_ACCESS_TOKEN"),
+            api_base_url=os.environ.get("MASTODON_API_BASE_URL")
+        )
+
+        # 2. Format Text (Mastodon standard limit is 500 characters)
+        title = post['enhanced_title']
+        tags_str = " ".join([f"#{t}" for t in post['hashtags']]) if post['hashtags'] else ""
+        full_text = f"{title}\n\n{post['enhanced_description']}\n\n{tags_str}"
+        
+        # Safe slice just in case your instance strictly enforces 500
+        if len(full_text) > 500:
+            full_text = post.get('short_text') or full_text[:490]
+
+        # 3. Handle Media Uploads
+        media_ids = []
+        if media_records:
+            for record in media_records:
+                res = requests.get(record['media_url'])
+                if res.status_code == 200:
+                    # Determine mime type quickly
+                    mime_type = "video/mp4" if is_video(record['media_url']) else "image/jpeg"
+                    
+                    try:
+                        # Upload directly from bytes
+                        media_dict = mastodon.media_post(res.content, mime_type=mime_type)
+                        media_ids.append(media_dict['id'])
+                    except Exception as e:
+                        print(f"Warning: Mastodon media upload failed: {e}")
+
+        # 4. Post the Status
+        mastodon.status_post(status=full_text, media_ids=media_ids if media_ids else None)
+
+    finally:
+        if conn: cursor.close(); conn.close()
+
 async def process_bluesky(post_id: int):
     conn = get_db_connection()
     try:
@@ -721,6 +769,75 @@ async def process_discord(post_id: int):
         
         if res.status_code not in [200, 204]:
             raise Exception(f"Discord API Error: {res.text}")
+
+    finally:
+        if conn: cursor.close(); conn.close()
+
+async def process_telegram(post_id: int):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
+        post = cursor.fetchone()
+        
+        # Telegram allows up to 10 media items in a carousel
+        cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 10;", (post_id,))
+        media_records = cursor.fetchall()
+
+        bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+        
+        if not bot_token or not chat_id:
+            raise Exception("Telegram credentials missing from .env")
+
+        base_url = f"https://api.telegram.org/bot{bot_token}"
+        
+        # Format the text
+        tags_str = " ".join([f"#{t}" for t in post['hashtags']]) if post['hashtags'] else ""
+        full_text = f"🚨 {post['enhanced_title']}\n\n{post['enhanced_description']}\n\n{tags_str}"
+
+        # 1. TEXT ONLY POST
+        if not media_records:
+            res = requests.post(f"{base_url}/sendMessage", json={
+                "chat_id": chat_id,
+                "text": full_text
+            })
+            if not res.ok: raise Exception(f"Telegram API Error: {res.text}")
+
+        # 2. SINGLE IMAGE OR VIDEO
+        elif len(media_records) == 1:
+            media_url = media_records[0]['media_url']
+            is_vid = is_video(media_url)
+            
+            endpoint = "/sendVideo" if is_vid else "/sendPhoto"
+            payload = {
+                "chat_id": chat_id,
+                "video" if is_vid else "photo": media_url,
+                "caption": full_text[:1024] # Telegram limits media captions to 1024 chars
+            }
+            
+            res = requests.post(f"{base_url}{endpoint}", json=payload)
+            if not res.ok: raise Exception(f"Telegram Media Error: {res.text}")
+
+        # 3. MULTIPLE MEDIA (CAROUSEL / ALBUM)
+        else:
+            media_group = []
+            for i, record in enumerate(media_records):
+                is_vid = is_video(record['media_url'])
+                item = {
+                    "type": "video" if is_vid else "photo",
+                    "media": record['media_url']
+                }
+                # Attach the caption ONLY to the very first image so it doesn't repeat
+                if i == 0:
+                    item["caption"] = full_text[:1024]
+                media_group.append(item)
+
+            res = requests.post(f"{base_url}/sendMediaGroup", json={
+                "chat_id": chat_id,
+                "media": media_group
+            })
+            if not res.ok: raise Exception(f"Telegram Carousel Error: {res.text}")
 
     finally:
         if conn: cursor.close(); conn.close()
@@ -835,8 +952,12 @@ async def publish_unified(post_id: int, request: UnifiedPublishRequest):
                 await process_youtube(post_id)
             elif platform == "Bluesky":           
                 await process_bluesky(post_id)     
-            elif platform == "Discord":       
-                await process_discord(post_id)        
+            elif platform == "Discord":            
+                await process_discord(post_id)     
+            elif platform == "Telegram":           
+                await process_telegram(post_id)    
+            elif platform == "Mastodon":           
+                await process_mastodon(post_id)   
             elif platform == "Threads":
                 await process_threads(post_id)
             elif platform == "Pinterest":

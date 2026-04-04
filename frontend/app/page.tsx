@@ -39,6 +39,12 @@ const Icons = {
   Discord: () => (
     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg>
   ),
+  Telegram: () => (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+  ),
+  Mastodon: () => (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M23.268 5.313c-.35-2.228-2.618-3.616-5.366-3.65-1.44-.017-2.908-.017-4.237-.017v-.003c-1.33 0-2.798 0-4.238.017-2.748.034-5.017 1.422-5.366 3.65-.36 2.308-.567 5.227-.567 8.356 0 6.802 4.163 7.64 7.41 7.822 2.21.124 4.148-.125 5.58-.624l-.16-1.924c-1.39.366-2.98.48-4.52.29-2.02-.246-2.07-1.73-2.07-1.73s2.45.33 5.4.33c1.6 0 3.12-.17 4.5-.47 2.06-.45 3.32-2.18 3.5-4.14.2-2.23.2-5.36.2-7.85zM17.432 13.7h-2.14v-4.114c0-1.28-.51-1.922-1.53-1.922-1.15 0-1.72.76-1.72 2.27v2.33h-2.15v-2.33c0-1.51-.57-2.27-1.72-2.27-1.02 0-1.53.64-1.53 1.92v4.11h-2.14V8.583c0-1.33.34-2.35 1.02-3.08.7-.74 1.58-1.11 2.64-1.11 1.25 0 2.16.5 2.72 1.49l.6 1.13.6-1.13c.56-1 1.47-1.49 2.72-1.49 1.06 0 1.94.37 2.64 1.11.68.73 1.02 1.75 1.02 3.08v5.114z"/></svg>
+  ),
 };
 
 const PLATFORMS = [
@@ -53,6 +59,8 @@ const PLATFORMS = [
   { id: 'Reddit', icon: <Icons.Reddit />, color: 'text-[#FF4500]', bg: 'hover:bg-orange-50 border-orange-200' },
   { id: 'Bluesky', icon: <Icons.Bluesky />, color: 'text-[#0085ff]', bg: 'hover:bg-blue-50 border-blue-200' },
   { id: 'Discord', icon: <Icons.Discord />, color: 'text-[#5865F2]', bg: 'hover:bg-indigo-50 border-indigo-200' },
+  { id: 'Telegram', icon: <Icons.Telegram />, color: 'text-[#26A5E4]', bg: 'hover:bg-blue-50 border-blue-200' },
+  { id: 'Mastodon', icon: <Icons.Mastodon />, color: 'text-[#6364FF]', bg: 'hover:bg-indigo-50 border-indigo-200' },
 ];
 
 const PINTEREST_BOARDS = [
@@ -76,8 +84,9 @@ const formatDate = (dateString: string) => {
 const isVideoMedia = (url: string) => /\.(mp4|mov|webm|avi|mkv)$/i.test(url) || url.includes('/video/upload/');
 
 export default function Home() {
-  const [inspirationImage, setInspirationImage] = useState<string | null>(null);
-  const [inspirationFile, setInspirationFile] = useState<File | null>(null);
+  // Change these from string/File to Arrays
+  const [inspirationImages, setInspirationImages] = useState<string[]>([]);
+  const [inspirationFiles, setInspirationFiles] = useState<File[]>([]);
   const LOCKED_PLATFORMS = ['LinkedIn', 'Twitter/X', 'Reddit', 'Pinterest'];
   const [redditSub, setRedditSub] = useState("shoutotb"); 
   const [baseText, setBaseText] = useState("");
@@ -113,41 +122,48 @@ export default function Home() {
     } catch (error) { console.error("Failed to fetch history:", error); } 
     finally { setIsFetchingHistory(false); }
   };
-const handleImageToAPI = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setInspirationFile(file); 
-      
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        // --- SMART COMPRESSOR: Shrink image to prevent Groq's 4MB limit crash ---
-        const img = new window.Image();
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          // 800px is perfectly large enough for the AI to understand the context
-          const MAX_WIDTH = 800; 
-          const scaleSize = MAX_WIDTH / img.width;
-          
-          // Only resize if the image is actually larger than 800px
-          if (img.width > MAX_WIDTH) {
-            canvas.width = MAX_WIDTH;
-            canvas.height = img.height * scaleSize;
-          } else {
-            canvas.width = img.width;
-            canvas.height = img.height;
-          }
-          
-          const ctx = canvas.getContext("2d");
-          if (ctx) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          
-          // Compress to JPEG at 70% quality and extract the raw base64 string
-          const base64String = canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
-          setInspirationImage(base64String);
+const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // Safety limit: only take the first 4 images to prevent Groq Payload limits
+    const filesToProcess = files.slice(0, 4);
+    
+    // Save the raw high-quality files for later Cloudinary upload
+    setInspirationFiles(prev => [...prev, ...filesToProcess]);
+
+    // Create a compressor promise for each file
+    const compressImage = (file: File): Promise<string> => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const img = new window.Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            const MAX_WIDTH = 800; 
+            const scaleSize = MAX_WIDTH / img.width;
+            
+            if (img.width > MAX_WIDTH) {
+              canvas.width = MAX_WIDTH;
+              canvas.height = img.height * scaleSize;
+            } else {
+              canvas.width = img.width;
+              canvas.height = img.height;
+            }
+            
+            const ctx = canvas.getContext("2d");
+            if (ctx) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL("image/jpeg", 0.7).split(",")[1]);
+          };
+          img.src = reader.result as string;
         };
-        img.src = reader.result as string;
-      };
-      reader.readAsDataURL(file);
-    }
+        reader.readAsDataURL(file);
+      });
+    };
+
+    // Compress all selected images at the same time and save to state
+    const base64Strings = await Promise.all(filesToProcess.map(compressImage));
+    setInspirationImages(prev => [...prev, ...base64Strings]);
   };
   const handleEnhance = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,30 +175,32 @@ const handleImageToAPI = (e: React.ChangeEvent<HTMLInputElement>) => {
         body: JSON.stringify({ 
           base_text: baseText, 
           platform: platform,
-          image_base64: inspirationImage 
+          image_base64_list: inspirationImages.length > 0 ? inspirationImages : null // 🔥 SENDING ARRAY
         }),
       });
       
       if (response.ok) { 
-        const data = await response.json(); // Get the generated post data
+        const data = await response.json();
         
-        // 🔥 AUTO-UPLOAD THE HIGH-QUALITY IMAGE
-        if (inspirationFile && data.db_id) {
+        // 🔥 MULTI-IMAGE AUTO-UPLOAD
+        if (inspirationFiles.length > 0 && data.db_id) {
           const formData = new FormData();
           formData.append("post_id", data.db_id.toString());
-          formData.append("files", inspirationFile); 
+          // Append all high-quality files to the form data
+          inspirationFiles.forEach(file => {
+            formData.append("files", file); 
+          });
           
-          // Silently upload to Cloudinary in the background
           await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/media/upload`, {
             method: "POST",
             body: formData
           });
         }
 
-        // Reset the form completely
+        // Reset completely
         setBaseText(""); 
-        setInspirationImage(null); 
-        setInspirationFile(null); 
+        setInspirationImages([]); 
+        setInspirationFiles([]); 
         fetchHistory(); 
         
       } else { 
@@ -198,7 +216,12 @@ const handleImageToAPI = (e: React.ChangeEvent<HTMLInputElement>) => {
   const handleManualSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    const tagsArray = manualTags.split(",").map(tag => tag.trim()).filter(tag => tag !== "");
+    
+    // 🔥 NEW: Scrub hashes and trim spaces
+    const tagsArray = manualTags.split(",")
+      .map(tag => tag.replace(/#/g, '').trim()) 
+      .filter(tag => tag !== "");
+
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/posts`, {
         method: "POST",
@@ -279,7 +302,10 @@ const handleImageToAPI = (e: React.ChangeEvent<HTMLInputElement>) => {
 };
 
   const saveEdit = async (id: number) => {
-    const tagsArray = editForm.hashtags.split(",").map(tag => tag.trim()).filter(tag => tag !== "");
+    const tagsArray = editForm.hashtags.split(",")
+      .map(tag => tag.replace(/#/g, '').trim())
+      .filter(tag => tag !== "");
+
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/posts/${id}`, {
         method: "PUT",
@@ -406,7 +432,7 @@ const handleImageToAPI = (e: React.ChangeEvent<HTMLInputElement>) => {
                   <label className="block text-sm font-bold text-slate-700">Select Networks</label>
                   <button 
                     type="button" 
-                    onClick={() => setSelectedPlatforms(['Facebook', 'Instagram', 'YouTube', 'Threads', 'Bluesky', 'Discord'])} 
+                    onClick={() => setSelectedPlatforms(['Facebook', 'Instagram', 'YouTube', 'Threads', 'Bluesky', 'Discord', 'Telegram', 'Mastodon'])} 
                     className="text-xs text-indigo-600 font-bold hover:underline"
                   >
                     Select All
@@ -560,32 +586,34 @@ const handleImageToAPI = (e: React.ChangeEvent<HTMLInputElement>) => {
                     <label className="block text-sm font-bold text-slate-700 mb-2">Draft Idea</label>
                     <textarea value={baseText} onChange={(e) => setBaseText(e.target.value)} placeholder="Type your rough idea here..." className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl h-36 focus:ring-2 focus:ring-indigo-500 outline-none resize-none transition-all" required />
                   </div>
-                  
-                  {/* --- NEW: IMAGE INSPIRATION FIELD --- */}
+
+                  {/* --- MULTI-IMAGE INSPIRATION FIELD --- */}
                   <div className="bg-indigo-50/50 border border-indigo-100 p-3.5 rounded-xl transition-all">
                     <label className="block text-xs font-bold text-indigo-800 mb-2 flex items-center gap-1.5">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                      AI Image Context (Optional)
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                      AI Context Images (Optional)
                     </label>
                     <div className="flex items-center gap-3">
-                      <label className="cursor-pointer bg-white text-indigo-600 px-4 py-2 rounded-lg text-sm font-bold border border-indigo-200 hover:bg-indigo-50 transition-colors shadow-sm">
-                        {inspirationImage ? "Image Attached ✓" : "Upload Image"}
-                        <input type="file" accept="image/*" className="hidden" onChange={handleImageToAPI} />
+                      <label className={`cursor-pointer bg-white px-4 py-2 rounded-lg text-sm font-bold border hover:bg-indigo-50 transition-colors shadow-sm ${inspirationImages.length > 0 ? 'text-indigo-600 border-indigo-200' : 'text-slate-600 border-slate-200'}`}>
+                        {inspirationImages.length > 0 ? `${inspirationImages.length} Image(s) Attached ✓` : "+ Add Images"}
+                        {/* 🔥 ADDED 'multiple' ATTRIBUTE */}
+                        <input type="file" multiple accept="image/*" className="hidden" onChange={handleImagesToAPI} />
                       </label>
-                      {inspirationImage && (
+                      
+                      {inspirationImages.length > 0 && (
                         <button 
                           type="button" 
                           onClick={() => { 
-                            setInspirationImage(null); 
-                            setInspirationFile(null); 
+                            setInspirationImages([]); 
+                            setInspirationFiles([]); 
                           }} 
-                          className="text-red-500 text-xs font-bold hover:underline"
+                          className="text-red-500 text-xs font-bold hover:underline bg-red-50 px-2 py-1.5 rounded-md"
                         >
-                          Remove
+                          Clear All
                         </button>
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-2 font-medium">Upload a photo for the AI to "read" and extract details for your post.</p>
+                    <p className="text-xs text-slate-500 mt-1">Add images to inspire the AI's understanding of your content (Max 4).</p>
                   </div>
 
                   <button type="submit" disabled={isLoading} className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold hover:bg-indigo-700 disabled:bg-indigo-300 shadow-md shadow-indigo-200 transition-all">

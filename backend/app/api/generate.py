@@ -16,7 +16,7 @@ client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 class PromptRequest(BaseModel):
     base_text: str
     platform: str = "General"
-    image_base64: Optional[str] = None  # NEW: Expect an optional image string
+    image_base64_list: Optional[List[str]] = None  
 
 class ManualPostRequest(BaseModel):
     platform: str
@@ -138,16 +138,23 @@ async def enhance_post(request: PromptRequest):
     """
     
     try:
-        # 🔥 SMART VISION LOGIC: Switch models and payload format if an image exists
-        if request.image_base64:
-            # UPGRADED: Using Groq's new Llama 4 Scout Vision Model
+        # 🔥 SMART VISION LOGIC: Handle multiple images
+        if request.image_base64_list and len(request.image_base64_list) > 0:
             model_to_use = "meta-llama/llama-4-scout-17b-16e-instruct" 
+            
+            # Start the payload with the text prompt
             user_content = [
-                {"type": "text", "text": f"Enhance this text based on the attached image: {request.base_text}"},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{request.image_base64}"}}
+                {"type": "text", "text": f"Enhance this text based on the attached image(s). Connect the context from all images provided: {request.base_text}"}
             ]
+            
+            # Loop through all provided images and append them to the AI's "vision" array
+            for img_b64 in request.image_base64_list:
+                user_content.append({
+                    "type": "image_url", 
+                    "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}
+                })
         else:
-            model_to_use = "llama-3.1-8b-instant" # Standard lightning-fast text model
+            model_to_use = "llama-3.1-8b-instant" 
             user_content = f"Enhance this text: {request.base_text}"
 
         response = client.chat.completions.create(
@@ -156,17 +163,22 @@ async def enhance_post(request: PromptRequest):
                 {"role": "user", "content": user_content}
             ],
             model=model_to_use,
-            temperature=0.4, # Slightly higher to allow creative image interpretation
+            temperature=0.4, 
             response_format={"type": "json_object"}
         )
         
         enhanced_content = json.loads(response.choices[0].message.content)
+        # Removes '#' and spaces from every tag the AI generated
+        raw_tags = enhanced_content.get('hashtags', [])
+        clean_hashtags = [str(tag).replace('#', '').replace(' ', '').strip() for tag in raw_tags if tag]
+        enhanced_content['hashtags'] = clean_hashtags
+        # ------------------------------
         
         # Automatically create the short version
         short_text = generate_short_version(
             enhanced_content.get('title', ''), 
             enhanced_content.get('description', ''), 
-            enhanced_content.get('hashtags', [])
+            enhanced_content.get('hashtags', []) # Now uses the clean tags
         )
         
         conn = get_db_connection()
