@@ -21,4 +21,4 @@ yarn-error.log*
 # --- MISC ---
 .DS_Store
 .vercel
-*.pem
+*.pemclient_secret.json

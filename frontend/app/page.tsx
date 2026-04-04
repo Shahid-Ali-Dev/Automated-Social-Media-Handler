@@ -45,6 +45,14 @@ const Icons = {
   Mastodon: () => (
     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M23.268 5.313c-.35-2.228-2.618-3.616-5.366-3.65-1.44-.017-2.908-.017-4.237-.017v-.003c-1.33 0-2.798 0-4.238.017-2.748.034-5.017 1.422-5.366 3.65-.36 2.308-.567 5.227-.567 8.356 0 6.802 4.163 7.64 7.41 7.822 2.21.124 4.148-.125 5.58-.624l-.16-1.924c-1.39.366-2.98.48-4.52.29-2.02-.246-2.07-1.73-2.07-1.73s2.45.33 5.4.33c1.6 0 3.12-.17 4.5-.47 2.06-.45 3.32-2.18 3.5-4.14.2-2.23.2-5.36.2-7.85zM17.432 13.7h-2.14v-4.114c0-1.28-.51-1.922-1.53-1.922-1.15 0-1.72.76-1.72 2.27v2.33h-2.15v-2.33c0-1.51-.57-2.27-1.72-2.27-1.02 0-1.53.64-1.53 1.92v4.11h-2.14V8.583c0-1.33.34-2.35 1.02-3.08.7-.74 1.58-1.11 2.64-1.11 1.25 0 2.16.5 2.72 1.49l.6 1.13.6-1.13c.56-1 1.47-1.49 2.72-1.49 1.06 0 1.94.37 2.64 1.11.68.73 1.02 1.75 1.02 3.08v5.114z"/></svg>
   ),
+  Google: () => (
+    <svg className="w-5 h-5" viewBox="0 0 24 24">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+    </svg>
+  ),
 };
 
 const PLATFORMS = [
@@ -61,6 +69,7 @@ const PLATFORMS = [
   { id: 'Discord', icon: <Icons.Discord />, color: 'text-[#5865F2]', bg: 'hover:bg-indigo-50 border-indigo-200' },
   { id: 'Telegram', icon: <Icons.Telegram />, color: 'text-[#26A5E4]', bg: 'hover:bg-blue-50 border-blue-200' },
   { id: 'Mastodon', icon: <Icons.Mastodon />, color: 'text-[#6364FF]', bg: 'hover:bg-indigo-50 border-indigo-200' },
+  { id: 'Google Business', icon: <Icons.Google />, color: 'text-blue-600', bg: 'hover:bg-blue-50 border-blue-200' },
 ];
 
 const PINTEREST_BOARDS = [
@@ -84,10 +93,11 @@ const formatDate = (dateString: string) => {
 const isVideoMedia = (url: string) => /\.(mp4|mov|webm|avi|mkv)$/i.test(url) || url.includes('/video/upload/');
 
 export default function Home() {
-  // Change these from string/File to Arrays
+  const [googleCtaType, setGoogleCtaType] = useState("LEARN_MORE");
+  const [googleCtaUrl, setGoogleCtaUrl] = useState("https://shoutotb.com");
   const [inspirationImages, setInspirationImages] = useState<string[]>([]);
   const [inspirationFiles, setInspirationFiles] = useState<File[]>([]);
-  const LOCKED_PLATFORMS = ['LinkedIn', 'Twitter/X', 'Reddit', 'Pinterest'];
+  const LOCKED_PLATFORMS = ['LinkedIn', 'Twitter/X', 'Reddit', 'Pinterest', 'Google Business'];
   const [redditSub, setRedditSub] = useState("shoutotb"); 
   const [baseText, setBaseText] = useState("");
   const [platform, setPlatform] = useState("General");
@@ -175,7 +185,7 @@ const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
         body: JSON.stringify({ 
           base_text: baseText, 
           platform: platform,
-          image_base64_list: inspirationImages.length > 0 ? inspirationImages : null // 🔥 SENDING ARRAY
+          image_base64_list: inspirationImages.length > 0 ? inspirationImages : null 
         }),
       });
       
@@ -247,7 +257,9 @@ const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
           platforms: selectedPlatforms,
           admin_password: adminPassword,
           pinterest_board_id: selectedPlatforms.includes("Pinterest") ? selectedBoardId : null,
-          reddit_subreddit: selectedPlatforms.includes("Reddit") ? redditSub : null
+          reddit_subreddit: selectedPlatforms.includes("Reddit") ? redditSub : null,
+          google_cta_type: selectedPlatforms.includes("Google Business") ? googleCtaType : null,
+          google_cta_url: selectedPlatforms.includes("Google Business") ? googleCtaUrl : null
         })
       });
       
@@ -422,8 +434,10 @@ const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
       {/* --- PUBLISH MODAL OVERLAY --- */}
       {publishModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl border border-slate-100">
+        // Added p-4 to ensure it doesn't touch the screen edges on small monitors
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          {/* Added max-h-[90vh], overflow-y-auto, and custom-scrollbar */}
+          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto custom-scrollbar">
             <h2 className="text-2xl font-bold mb-4">Publish Campaign</h2>
             
             <form onSubmit={handleUnifiedPublish} className="space-y-6">
@@ -450,14 +464,15 @@ const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
                         type="button"
                         disabled={isLocked}
                         onClick={() => togglePlatform(plat.id)}
-                        className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all text-left
+                        className={`group flex items-center justify-between p-3 rounded-xl border-2 transition-all text-left
                           ${isLocked ? 'opacity-60 bg-slate-50 border-slate-100 cursor-not-allowed' : 
                             isSelected ? `border-indigo-600 bg-indigo-50 ${plat.color}` : 'border-slate-200 hover:border-slate-300 text-slate-500'}
                         `}
                       >
                         <div className="flex items-center gap-2">
-                          {/* Grayscale the icon if locked */}
-                          <div className={isLocked ? "grayscale opacity-50" : ""}>
+                          
+                          {/* 🔥 NEW: Applies grayscale when unselected, reveals color on hover or selection */}
+                          <div className={`${isLocked ? "grayscale opacity-50" : !isSelected ? "grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100 transition-all" : ""}`}>
                             {plat.icon}
                           </div>
                           
@@ -521,6 +536,36 @@ const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
                   </div>
                 )}
               </div>
+              {/* DYNAMIC GOOGLE BUSINESS SELECTOR */}
+                {selectedPlatforms.includes('Google Business') && (
+                  <div className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-xl transition-all space-y-3">
+                    <label className="block text-xs font-bold text-blue-800 flex items-center gap-1">
+                      <Icons.Google /> Google Call-to-Action Button
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select 
+                        value={googleCtaType} 
+                        onChange={(e) => setGoogleCtaType(e.target.value)}
+                        className="w-full p-2 text-sm font-semibold border border-blue-200 rounded-lg outline-none bg-white"
+                      >
+                        <option value="NONE">No Button</option>
+                        <option value="LEARN_MORE">Learn More</option>
+                        <option value="BOOK">Book</option>
+                        <option value="ORDER">Order Online</option>
+                        <option value="SIGN_UP">Sign Up</option>
+                        <option value="CALL">Call Now</option>
+                      </select>
+                      <input 
+                        type="url" 
+                        value={googleCtaUrl} 
+                        onChange={(e) => setGoogleCtaUrl(e.target.value)}
+                        disabled={googleCtaType === "NONE" || googleCtaType === "CALL"}
+                        className="w-full p-2 text-sm outline-none border border-blue-200 rounded-lg disabled:bg-slate-100 disabled:text-slate-400"
+                        placeholder="Link URL..."
+                      />
+                    </div>
+                  </div>
+                )}
 
               <div>
                 <label className="block text-sm font-bold mb-2 text-slate-700">Admin Password</label>
@@ -528,16 +573,41 @@ const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
                   type="password" 
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
-                  className="w-full p-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
+                  disabled={isPublishing !== null} 
+                  className="w-full p-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow disabled:bg-slate-50 disabled:text-slate-400 disabled:opacity-70"
                   placeholder="Enter secret to confirm..."
                   required
                 />
               </div>
 
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setPublishModalOpen(null)} className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-colors">Cancel</button>
-                <button type="submit" disabled={isPublishing !== null} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-md shadow-indigo-200">
-                  {isPublishing ? "Pushing Live..." : "Launch Post"}
+                <button 
+                  type="button" 
+                  onClick={() => setPublishModalOpen(null)} 
+                  disabled={isPublishing !== null}
+                  className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+                
+                <button 
+                  type="submit" 
+                  disabled={isPublishing !== null} 
+                  className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:bg-indigo-500 transition-all shadow-md shadow-indigo-200 flex justify-center items-center gap-2 overflow-hidden relative"
+                >
+                  {isPublishing ? (
+                    <>
+                      {/* --- TAILWIND SVG SPINNER --- */}
+                      <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      {/* --- PULSING TEXT --- */}
+                      <span className="animate-pulse">Firing to {selectedPlatforms.length} networks...</span>
+                    </>
+                  ) : (
+                    "Launch Post"
+                  )}
                 </button>
               </div>
             </form>
@@ -571,9 +641,11 @@ const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
                         key={plat.id}
                         onClick={() => setPlatform(plat.id)}
                         title={plat.id}
-                        className={`flex justify-center p-3 rounded-xl border transition-all ${platform === plat.id ? `border-indigo-600 bg-indigo-50 ${plat.color} ring-1 ring-indigo-600` : `border-slate-200 bg-white text-slate-400 ${plat.bg} hover:text-slate-600`}`}
+                        className={`group flex justify-center p-3 rounded-xl border transition-all ${platform === plat.id ? `border-indigo-600 bg-indigo-50 ${plat.color} ring-1 ring-indigo-600` : `border-slate-200 bg-white text-slate-400 ${plat.bg} hover:text-slate-600`}`}
                       >
-                        {plat.icon}
+                        <div className={platform !== plat.id ? "grayscale opacity-70 group-hover:grayscale-0 group-hover:opacity-100 transition-all" : ""}>
+                          {plat.icon}
+                        </div>
                       </button>
                     ))}
                   </div>

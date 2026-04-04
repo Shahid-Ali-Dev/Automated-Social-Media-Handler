@@ -2,6 +2,7 @@ import os
 import tempfile
 import praw
 import requests
+import asyncio
 import base64
 from atproto import Client as BskyClient
 from typing import List, Optional
@@ -47,6 +48,8 @@ class UnifiedPublishRequest(BaseModel):
     admin_password: str
     pinterest_board_id: Optional[str] = None
     reddit_subreddit: Optional[str] = None
+    google_cta_type: Optional[str] = "LEARN_MORE"  
+    google_cta_url: Optional[str] = "https://shoutotb.com"
 
 class SkipPublishException(Exception):
     pass
@@ -842,6 +845,65 @@ async def process_telegram(post_id: int):
     finally:
         if conn: cursor.close(); conn.close()
 
+async def process_google(post_id: int, cta_type: str, cta_url: str):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
+        post = cursor.fetchone()
+        
+        # Google only supports 1 image per post
+        cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 1;", (post_id,))
+        media_record = cursor.fetchone()
+
+        location_name = os.environ.get("GOOGLE_LOCATION_NAME") 
+        refresh_token = os.environ.get("GOOGLE_BUSINESS_REFRESH_TOKEN")
+        
+        if not location_name or not refresh_token or refresh_token == "pending_approval":
+            raise Exception("Google Business credentials missing or pending approval.")
+
+        # 1. Refresh the Access Token
+        token_res = requests.post("https://oauth2.googleapis.com/token", data={
+            "client_id": os.environ.get("GOOGLE_CLIENT_ID"),
+            "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET"),
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token"
+        })
+        if not token_res.ok: raise Exception(f"Failed to refresh Google token: {token_res.text}")
+        access_token = token_res.json().get("access_token")
+
+        # 2. Build the Payload
+        # Google limits posts to 1500 chars
+        full_text = f"{post['enhanced_title']}\n\n{post['enhanced_description']}"[:1500]
+
+        payload = {
+            "languageCode": "en-US",
+            "summary": full_text
+        }
+
+        # Add Call To Action Button
+        if cta_type and cta_type != "NONE":
+            payload["callToAction"] = {
+                "actionType": cta_type,
+                "url": cta_url if cta_url else "https://shoutotb.com" # Fallback URL
+            }
+
+        # Add Image (Google fetches directly from your Cloudinary URL)
+        if media_record and not is_video(media_record['media_url']):
+            payload["media"] = [{"mediaFormat": "PHOTO", "sourceUrl": media_record['media_url']}]
+
+        # 3. Publish to Google
+        headers = {"Authorization": f"Bearer {access_token}"}
+        endpoint = f"https://mybusiness.googleapis.com/v4/{location_name}/localPosts"
+        
+        publish_res = requests.post(endpoint, headers=headers, json=payload)
+        
+        if not publish_res.ok:
+            raise Exception(f"Google Business API Error: {publish_res.text}")
+
+    finally:
+        if conn: cursor.close(); conn.close()
+
 async def process_youtube(post_id: int):
     conn = get_db_connection()
     try:
@@ -935,11 +997,11 @@ async def publish_unified(post_id: int, request: UnifiedPublishRequest):
     if not request.platforms:
         raise HTTPException(status_code=400, detail="No platforms selected")
 
-    results = []
-    
-    for platform in request.platforms:
+    # --- 1. THE CONCURRENCY WRAPPER ---
+    # This isolated function handles exactly ONE platform from start to finish
+    async def run_processor(platform: str):
         try:
-            # Check for the platform and execute the corresponding processor
+            # Route to the correct platform
             if platform == "LinkedIn":
                 await process_linkedin(post_id) 
             elif platform == "Facebook":
@@ -952,34 +1014,42 @@ async def publish_unified(post_id: int, request: UnifiedPublishRequest):
                 await process_youtube(post_id)
             elif platform == "Bluesky":           
                 await process_bluesky(post_id)     
-            elif platform == "Discord":            
-                await process_discord(post_id)     
-            elif platform == "Telegram":           
-                await process_telegram(post_id)    
-            elif platform == "Mastodon":           
-                await process_mastodon(post_id)   
             elif platform == "Threads":
                 await process_threads(post_id)
             elif platform == "Pinterest":
                 await process_pinterest(post_id, request.pinterest_board_id)
             elif platform == "Reddit":                 
                 await process_reddit(post_id, request.reddit_subreddit)
+            elif platform == "Discord":            
+                await process_discord(post_id)     
+            elif platform == "Telegram":           
+                await process_telegram(post_id)    
+            elif platform == "Mastodon":           
+                await process_mastodon(post_id) 
+            elif platform == "Google Business":    
+                await process_google(post_id, request.google_cta_type, request.google_cta_url)
             else:
                 raise Exception(f"Unknown platform identifier: {platform}")
 
+            # If it didn't crash, it's a success!
             log_publish_attempt(post_id, platform, "Success")
-            results.append({"platform": platform, "status": "Success"})
+            return {"platform": platform, "status": "Success"}
             
         except SkipPublishException as skip_e:
             skip_msg = str(skip_e)
             log_publish_attempt(post_id, platform, "Skipped", skip_msg)
-            results.append({"platform": platform, "status": "Skipped", "error": skip_msg})
+            return {"platform": platform, "status": "Skipped", "error": skip_msg}
                 
         except Exception as e:
             error_str = str(e)
             log_publish_attempt(post_id, platform, "Failed", error_str)
-            results.append({"platform": platform, "status": "Failed", "error": error_str})
+            return {"platform": platform, "status": "Failed", "error": error_str}
 
+    # --- 2. THE ASYNCIO GATHER ENGINE ---
+    tasks = [run_processor(plat) for plat in request.platforms]
+    results = await asyncio.gather(*tasks)
+
+    # --- 3. DATABASE CLEANUP ---
     if any(r["status"] in ["Success", "Skipped"] for r in results):
         conn = get_db_connection()
         if conn:
