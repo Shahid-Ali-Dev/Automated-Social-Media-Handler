@@ -387,7 +387,6 @@ async def process_instagram(post_id: int):
         cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
         post = cursor.fetchone()
         
-        # Fetch media
         cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 10;", (post_id,))
         media_records = cursor.fetchall()
 
@@ -398,7 +397,7 @@ async def process_instagram(post_id: int):
         page_token = get_page_access_token(os.environ.get("META_ACCESS_TOKEN"), os.environ.get("FACEBOOK_PAGE_ID"))
         ig_id = os.environ.get("INSTAGRAM_ACCOUNT_ID")
         
-        # --- Proceed with Container Creation ---
+        # --- STEP 1: Create the Media Container ---
         if len(media_records) == 1:
             safe_url = optimize_media_url_for_ig(media_records[0]['media_url'])
             is_vid = is_video(media_records[0]['media_url'])
@@ -410,33 +409,46 @@ async def process_instagram(post_id: int):
             else:
                 container_payload["image_url"] = safe_url
                 
-            # Added timeout to prevent the crash you saw on Threads
             cont_response = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data=container_payload, timeout=(10, 180))
             if cont_response.status_code != 200: raise Exception(f"IG container failed: {cont_response.text}")
             creation_id = cont_response.json().get("id")
             
-            if is_vid:
-                for _ in range(15): 
-                    time.sleep(5)
-                    status_res = requests.get(f"https://graph.facebook.com/v19.0/{creation_id}?fields=status_code&access_token={page_token}")
-                    if status_res.status_code == 200 and status_res.json().get('status_code') == 'FINISHED': break
         else:
-            # Multi-media Carousels (Note: Carousels still use "VIDEO" inside children, 
-            # but the main container handles it differently)
+            # Multi-media Carousels 
             children_ids = []
             for record in media_records:
                 safe_url = optimize_media_url_for_ig(record['media_url'])
                 is_vid = is_video(record['media_url'])
                 payload = {"is_carousel_item": "true", "access_token": page_token, "video_url" if is_vid else "image_url": safe_url}
                 if is_vid: payload["media_type"] = "VIDEO"
+                
                 item_res = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data=payload, timeout=(10, 120))
                 if item_res.status_code == 200: children_ids.append(item_res.json().get("id"))
             
             car_res = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media", data={"media_type": "CAROUSEL", "children": ",".join(children_ids), "caption": full_text, "access_token": page_token}, timeout=(10, 120))
+            if car_res.status_code != 200: raise Exception(f"IG Carousel Parent failed: {car_res.text}")
             creation_id = car_res.json().get("id")
 
+        # --- STEP 2: Wait for Meta to finish processing the media before publishing 
+        is_ready = False
+        for _ in range(15): # Wait up to 75 seconds for Meta to process
+            time.sleep(5)
+            status_res = requests.get(f"https://graph.facebook.com/v19.0/{creation_id}?fields=status_code&access_token={page_token}")
+            if status_res.status_code == 200:
+                status = status_res.json().get('status_code')
+                if status == 'FINISHED':
+                    is_ready = True
+                    break
+                elif status == 'ERROR':
+                    raise Exception("Instagram failed to process the media file (Internal Meta Error).")
+        
+        if not is_ready:
+            raise Exception("Instagram media processing timed out after 75 seconds.")
+
+        # --- STEP 3: Publish ---
         pub_response = requests.post(f"https://graph.facebook.com/v19.0/{ig_id}/media_publish", data={"creation_id": creation_id, "access_token": page_token}, timeout=(10, 120))
         if pub_response.status_code != 200: raise Exception(f"Failed to publish to IG: {pub_response.text}")
+        
     finally:
         if conn: cursor.close(); conn.close()
 
@@ -501,14 +513,34 @@ async def process_threads(post_id: int):
                 
                 # Upload individual item
                 item_res = requests.post(f"https://graph.threads.net/v1.0/{threads_id}/threads", data=payload, timeout=(10, 120))
+                
                 if item_res.ok:
-                    children_ids.append(item_res.json().get("id"))
+                    child_id = item_res.json().get("id")
+                    
+                    # 🔥 THE FIX: Wait for Meta to finish processing this specific child
+                    is_ready = False
+                    for _ in range(12): # Wait up to 60 seconds per item
+                        time.sleep(5)
+                        status_res = requests.get(f"https://graph.threads.net/v1.0/{child_id}?fields=status&access_token={threads_token}")
+                        if status_res.status_code == 200:
+                            status = status_res.json().get('status')
+                            if status == 'FINISHED':
+                                is_ready = True
+                                break
+                            elif status == 'ERROR':
+                                print(f"Warning: Meta failed to process child {child_id}")
+                                break
+                                
+                    if is_ready:
+                        children_ids.append(child_id)
+                    else:
+                        print(f"Warning: Child {child_id} timed out during processing.")
                 else:
-                    # Log individual item failure but keep going if possible
                     print(f"Warning: Carousel item failed: {item_res.text}")
             
+            # Verify we have enough successfully processed children
             if len(children_ids) < 2:
-                raise Exception(f"Carousel failed: Need at least 2 successful items, but only got {len(children_ids)}.")
+                raise Exception(f"Carousel failed: Need at least 2 fully processed items, but only got {len(children_ids)}.")
 
             # Create the parent carousel container
             car_payload = {
