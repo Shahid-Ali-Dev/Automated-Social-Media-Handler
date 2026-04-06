@@ -97,6 +97,7 @@ export default function Home() {
   const [googleCtaUrl, setGoogleCtaUrl] = useState("https://shoutotb.com");
   const [inspirationImages, setInspirationImages] = useState<string[]>([]);
   const [inspirationFiles, setInspirationFiles] = useState<File[]>([]);
+  const [expandedMedia, setExpandedMedia] = useState<{items: any[], currentIndex: number} | null>(null);
   const LOCKED_PLATFORMS = ['LinkedIn', 'Twitter/X', 'Reddit', 'Pinterest', 'Google Business'];
   const [redditSub, setRedditSub] = useState("shoutotb"); 
   const [baseText, setBaseText] = useState("");
@@ -118,6 +119,7 @@ export default function Home() {
   const [adminPassword, setAdminPassword] = useState("");
   const [logsModalOpen, setLogsModalOpen] = useState<any[] | null>(null);
   const [selectedBoardId, setSelectedBoardId] = useState("937593284863932831"); 
+  
 
   useEffect(() => { fetchHistory(); }, []);
 
@@ -614,7 +616,82 @@ const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
           </div>
         </div>
       )}
+      {/* --- MEDIA CAROUSEL LIGHTBOX MODAL --- */}
+      {expandedMedia && (
+        <div 
+          className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center z-[70] p-4 animate-in fade-in duration-200"
+          onClick={() => setExpandedMedia(null)} // Click background to close
+        >
+          {/* Close Button */}
+          <button 
+            className="absolute top-6 right-6 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-2.5 rounded-full backdrop-blur transition-all z-50"
+            onClick={(e) => { e.stopPropagation(); setExpandedMedia(null); }}
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
 
+          {/* Left Navigation Arrow */}
+          {expandedMedia.currentIndex > 0 && (
+            <button 
+              className="absolute left-4 md:left-8 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full backdrop-blur transition-all z-50"
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                setExpandedMedia({ ...expandedMedia, currentIndex: expandedMedia.currentIndex - 1 }); 
+              }}
+            >
+              <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+            </button>
+          )}
+
+          {/* Right Navigation Arrow */}
+          {expandedMedia.currentIndex < expandedMedia.items.length - 1 && (
+            <button 
+              className="absolute right-4 md:right-8 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full backdrop-blur transition-all z-50"
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                setExpandedMedia({ ...expandedMedia, currentIndex: expandedMedia.currentIndex + 1 }); 
+              }}
+            >
+              <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
+            </button>
+          )}
+
+          {/* Media Container */}
+          <div 
+            className="relative max-w-5xl w-full max-h-[90vh] flex flex-col items-center justify-center animate-in zoom-in-95 duration-200" 
+            onClick={(e) => e.stopPropagation()} 
+          >
+            {(() => {
+              const currentMedia = expandedMedia.items[expandedMedia.currentIndex];
+              const isVideo = isVideoMedia(currentMedia.url);
+              
+              return isVideo ? (
+                <video 
+                  key={currentMedia.url} // Forces the video player to reload the new source
+                  src={currentMedia.url} 
+                  controls 
+                  autoPlay 
+                  className="max-w-full max-h-[80vh] rounded-xl shadow-2xl border border-white/10" 
+                />
+              ) : (
+                <img 
+                  key={currentMedia.url}
+                  src={currentMedia.url} 
+                  alt="Expanded media preview" 
+                  className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10" 
+                />
+              );
+            })()}
+            
+            {/* Image Counter (e.g., "2 / 4") */}
+            <div className="text-white/50 text-sm font-bold mt-4 tracking-widest bg-black/40 px-4 py-1.5 rounded-full">
+              {expandedMedia.currentIndex + 1} / {expandedMedia.items.length}
+            </div>
+          </div>
+        </div>
+      )}
       {/* --- MAIN DASHBOARD LAYOUT --- */}
       <div className="max-w-7xl mx-auto">
         <h1 className="text-4xl font-extrabold tracking-tight mb-8 text-slate-900">Social Auto Engine</h1>
@@ -747,18 +824,23 @@ const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
                         <div className="w-full md:w-1/3 flex flex-col gap-3">
                           {post.media_files && post.media_files.length > 0 ? (
                             <div className="grid grid-cols-2 gap-2">
-                              {post.media_files.map((media: any) => (
-                                <div key={media.id} className="relative group/media overflow-hidden rounded-xl border border-slate-200 bg-black">
+                              {post.media_files.map((media: any, index: number) => (
+                                <div 
+                                  key={media.id} 
+                                  // 🔥 Added cursor-pointer and hover ring
+                                  className="relative group/media overflow-hidden rounded-xl border border-slate-200 bg-black cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
+                                  onClick={() => setExpandedMedia({ items: post.media_files, currentIndex: index })}
+                                >
                                   <img 
                                     src={media.url.replace(/\.(mp4|mov|webm)$/i, ".jpg")} 
-                                    className="w-full h-24 object-cover hover:opacity-80 transition-opacity"
+                                    className="w-full h-24 object-cover group-hover/media:opacity-70 transition-opacity"
                                     alt="Post attachment"
                                   />
                                   
-                                  {/* --- NEW: VIDEO PLAY BUTTON OVERLAY --- */}
+                                  {/* --- VIDEO PLAY BUTTON OVERLAY --- */}
                                   {isVideoMedia(media.url) && (
                                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                      <div className="bg-black/50 p-1.5 rounded-full backdrop-blur-sm shadow-sm">
+                                      <div className="bg-black/60 p-1.5 rounded-full backdrop-blur-sm shadow-sm">
                                         <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
                                           <path d="M8 5v14l11-7z" />
                                         </svg>
@@ -766,7 +848,11 @@ const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
                                     </div>
                                   )}
 
-                                  <button onClick={() => handleDeleteMedia(media.id)} className="absolute top-1 right-1 bg-red-500/90 backdrop-blur text-white rounded-full p-1.5 opacity-0 group-hover/media:opacity-100 transition-opacity hover:bg-red-600">
+                                  {/* Delete button (stop propagation so it doesn't open the image when deleting) */}
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteMedia(media.id); }} 
+                                    className="absolute top-1 right-1 bg-red-500/90 backdrop-blur text-white rounded-full p-1.5 opacity-0 group-hover/media:opacity-100 transition-opacity hover:bg-red-600"
+                                  >
                                     <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                                   </button>
                                 </div>
