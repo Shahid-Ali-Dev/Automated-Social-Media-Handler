@@ -3,8 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import generate, media, publish
 from app.core.db import init_db 
 
-init_db()
-
 app = FastAPI(title="Social Auto Engine API")
 
 app.add_middleware(

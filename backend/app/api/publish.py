@@ -1,3 +1,4 @@
+# publish.py
 import os
 import tempfile
 import praw
@@ -745,21 +746,42 @@ async def process_bluesky(post_id: int):
 
         # 3. Handle Media & Post
         if media_records:
-            img_url = media_records[0]['media_url']
-            img_res = requests.get(img_url)
+            original_url = media_records[0]['media_url']
+            
+            # 🔥 THE CLOUDINARY OPTIMIZATION FIX 🔥
+            # Injecting transformation parameters immediately after "/upload/"
+            if "/upload/" in original_url and not is_video(original_url):
+                optimized_url = original_url.replace(
+                    "/upload/", 
+                    "/upload/c_limit,w_2000,h_2000,q_auto:good,f_jpg/"
+                )
+            else:
+                optimized_url = original_url
+
+            # Fetch the compressed image from Cloudinary
+            img_res = requests.get(optimized_url)
+            
             if img_res.status_code == 200:
+                img_data = img_res.content
+                
+                # Double-check it actually stayed under 1MB just to be safe
+                if len(img_data) > 1000000:
+                    raise Exception(f"Image is still too large for Bluesky even after Cloudinary optimization ({len(img_data)} bytes).")
+
                 client.send_image(
                     text=full_text,
-                    image=img_res.content,
+                    image=img_data,
                     image_alt=title
                 )
             else:
-                raise Exception("Failed to download image for Bluesky")
+                raise Exception(f"Failed to download optimized image for Bluesky: {img_res.status_code}")
         else:
             client.send_post(text=full_text)
 
     finally:
-        if conn: cursor.close(); conn.close()
+        if conn: 
+            cursor.close()
+            conn.close()
 
 async def process_discord(post_id: int):
     conn = get_db_connection()
