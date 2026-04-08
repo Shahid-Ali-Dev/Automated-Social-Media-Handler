@@ -2,6 +2,7 @@ import os
 import tempfile
 import praw
 import requests
+import json
 import asyncio
 import base64
 from atproto import Client as BskyClient
@@ -11,7 +12,8 @@ import time
 from datetime import datetime
 from pydantic import BaseModel
 import tweepy
-from fastapi import APIRouter, HTTPException
+import asyncio
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.core.db import get_db_connection
 from dotenv import load_dotenv
 from google.oauth2.credentials import Credentials
@@ -23,6 +25,8 @@ load_dotenv()
 
 router = APIRouter()
 
+MAX_CONCURRENT_PLATFORMS = 3
+limiter = asyncio.Semaphore(MAX_CONCURRENT_PLATFORMS)
 # ==========================================
 # 1. AUTHENTICATION & CONFIGURATION
 # ==========================================
@@ -73,7 +77,22 @@ def log_publish_attempt(post_id, platform, status, error_msg=""):
         finally:
             cursor.close()
             conn.close()
-    
+
+def download_media_locally(media_records):
+    local_paths = []
+    for record in media_records:
+        url = record['media_url']
+        suffix = ".mp4" if is_video(url) else ".jpg"
+        # Download in chunks (streaming) to keep RAM usage near zero
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            fd, path = tempfile.mkstemp(suffix=suffix)
+            with os.fdopen(fd, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            local_paths.append({"path": path, "url": url, "is_video": is_video(url)})
+    return local_paths
+   
 def is_video(url: str) -> bool:
     """Checks if the Cloudinary URL is a video file."""
     if not url: return False
@@ -103,26 +122,23 @@ def get_linkedin_user_urn(access_token):
         return sub_id if sub_id.startswith("urn:li:person:") else f"urn:li:person:{sub_id}"
     raise Exception(f"Failed to fetch URN: {response.text}")
 
-def upload_media_to_linkedin(media_url, access_token, author_urn, is_vid):
-    """Downloads from Cloudinary and uploads binary to LinkedIn."""
+def upload_media_to_linkedin(local_path, access_token, author_urn, is_vid): # 🔥 Changed media_url to local_path
     headers = {"Authorization": f"Bearer {access_token}", "X-Restli-Protocol-Version": "2.0.0", "Content-Type": "application/json"}
     recipe = "urn:li:digitalmediaRecipe:feedshare-video" if is_vid else "urn:li:digitalmediaRecipe:feedshare-image"
     
     # 1. Register Upload
     reg_payload = {"registerUploadRequest": {"recipes": [recipe], "owner": author_urn, "serviceRelationships": [{"relationshipType": "OWNER", "identifier": "urn:li:userGeneratedContent"}]}}
     reg_response = requests.post("https://api.linkedin.com/v2/assets?action=registerUpload", headers=headers, json=reg_payload)
-    if reg_response.status_code != 200: raise Exception(f"Failed to register media: {reg_response.text}")
-        
+    
     upload_url = reg_response.json()['value']['uploadMechanism']['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest']['uploadUrl']
     asset_urn = reg_response.json()['value']['asset']
 
-    # 2. Download & Upload Binary
-    media_response = requests.get(media_url)
-    upload_headers = {"Authorization": f"Bearer {access_token}"}
-    if is_vid: upload_headers["Content-Type"] = "application/octet-stream"
+    # 2. 🔥 REPLACEMENT: Open local file instead of downloading
+    with open(local_path, 'rb') as f:
+        upload_headers = {"Authorization": f"Bearer {access_token}"}
+        if is_vid: upload_headers["Content-Type"] = "application/octet-stream"
+        requests.put(upload_url, headers=upload_headers, data=f)
         
-    upload_res = requests.put(upload_url, headers=upload_headers, data=media_response.content)
-    if upload_res.status_code not in [200, 201]: raise Exception(f"Failed to upload binary: {upload_res.text}")
     return asset_urn
 
 def get_page_access_token(system_user_token, page_id):
@@ -260,56 +276,29 @@ def get_smart_pinterest_token():
 # 3. CORE PUBLISHING LOGIC (Internal Processors)
 # ==========================================
 
-async def process_x(post_id: int):
+async def process_x(post_id: int, local_media: list): # 🔥 Added local_media
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
         post = cursor.fetchone()
         
-        cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 4;", (post_id,))
-        media_records = cursor.fetchall()
-        
         media_ids = []
-        if media_records:
-            for record in media_records:
-                res = requests.get(record['media_url'])
-                if res.status_code == 200:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-                        tmp.write(res.content)
-                        tmp_path = tmp.name
-                    try:
-                        # V1.1 Upload (Requires Free/Basic/Pro tier)
-                        media_upload = api_v1.media_upload(tmp_path)
-                        media_ids.append(media_upload.media_id)
-                    except Exception as media_err:
-                        # If media upload fails, we should know why (e.g., "Too Many Requests" or "Forbidden")
-                        raise Exception(f"X Media Upload Failed: {str(media_err)}")
-                    finally:
-                        if os.path.exists(tmp_path): os.remove(tmp_path)
+        # 🔥 REPLACEMENT: Use the paths from local_media instead of downloading
+        for m in local_media:
+            if not m['is_video']: # X handles images and videos differently in V1.1
+                media_upload = api_v1.media_upload(m['path'])
+                media_ids.append(media_upload.media_id)
 
-        # Try to use the AI short text first. If it's an old post without one, fallback to the slicer.
-        tweet_text = post.get('short_text') 
-        if not tweet_text:
-            tweet_text = format_tweet_text(post['enhanced_title'], post['enhanced_description'], post['hashtags'])
-
-        # V2 Tweet Creation
-        response = client.create_tweet(text=tweet_text, media_ids=media_ids if media_ids else None)
-
-        # Robust check for the response
-        if not response or not response.data or 'id' not in response.data:
-            raise Exception("X API did not return a Tweet ID. Check if your API key permissions are set to 'Read and Write'.")
+        tweet_text = post.get('short_text') or format_tweet_text(post['enhanced_title'], post['enhanced_description'], post['hashtags'])
+        client.create_tweet(text=tweet_text, media_ids=media_ids if media_ids else None)
 
     except Exception as e:
-        # 🔥 Catch EVERY error (auth, network, API) and raise it as a string
-        # This ensures the Master Controller logs the EXACT failure reason
         raise Exception(str(e))
     finally:
-        if conn:
-            cursor.close()
-            conn.close()
+        if conn: cursor.close(); conn.close()
 
-async def process_linkedin(post_id: int):
+async def process_linkedin(post_id: int, local_media: list):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
@@ -327,12 +316,10 @@ async def process_linkedin(post_id: int):
         linkedin_media_items = []
         is_post_video = False
         
-        if media_records:
-            for record in media_records:
-                is_vid = is_video(record['media_url'])
-                if is_vid: is_post_video = True
-                asset_urn = upload_media_to_linkedin(record['media_url'], access_token, author_urn, is_vid)
-                linkedin_media_items.append({"status": "READY", "description": {"text": post['enhanced_title']}, "media": asset_urn, "title": {"text": post['enhanced_title']}})
+        if local_media:
+            for m in local_media:
+                # 🔥 REPLACEMENT: Pass the path
+                asset_urn = upload_media_to_linkedin(m['path'], access_token, author_urn, m['is_video'])
 
         category = "NONE" if not linkedin_media_items else ("VIDEO" if is_post_video else "IMAGE")
         share_content = {"shareCommentary": {"text": full_text}, "shareMediaCategory": category}
@@ -615,7 +602,7 @@ async def process_pinterest(post_id: int, board_id: str):
     finally:
         if conn: cursor.close(); conn.close()
 
-async def process_reddit(post_id: int, subreddit_name: str):
+async def process_reddit(post_id: int, subreddit_name: str, local_media: list):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
@@ -644,79 +631,48 @@ async def process_reddit(post_id: int, subreddit_name: str):
         full_text = f"{post['enhanced_description']}\n\n{tags_str}"
 
         # 2. Find the first image (Skip videos for now, as Reddit API video handling is complex)
-        image_url = next((m['media_url'] for m in media_records if not is_video(m['media_url'])), None)
+        first_image = next((m for m in local_media if not m['is_video']), None)
 
-        if image_url:
-            # Download image to temp file for Reddit upload
-            res = requests.get(image_url, stream=True)
-            if res.status_code == 200:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_img:
-                    temp_img.write(res.content)
-                    temp_img_path = temp_img.name
-
-                try:
-                    # Submit Image Post
-                    subreddit.submit_image(title=title, image_path=temp_img_path)
-                finally:
-                    if os.path.exists(temp_img_path): os.remove(temp_img_path)
-            else:
-                raise Exception("Failed to download image from Cloudinary for Reddit.")
+        if first_image:
+            # We don't need 'requests.get' or 'tempfile' anymore!
+            subreddit.submit_image(title=title, image_path=first_image['path'])
         else:
-            # Submit Text-Only Post
             subreddit.submit(title=title, selftext=full_text)
 
     finally:
         if conn: cursor.close(); conn.close()
 
-async def process_mastodon(post_id: int):
+async def process_mastodon(post_id: int, local_media: list): # 🔥 Added local_media
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
         post = cursor.fetchone()
-        
-        # Mastodon allows up to 4 media attachments
-        cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s LIMIT 4;", (post_id,))
-        media_records = cursor.fetchall()
 
-        # 1. Initialize the Client
         mastodon = Mastodon(
             access_token=os.environ.get("MASTODON_ACCESS_TOKEN"),
             api_base_url=os.environ.get("MASTODON_API_BASE_URL")
         )
 
-        # 2. Format Text (Mastodon standard limit is 500 characters)
-        title = post['enhanced_title']
+        # Uploading from local disk
+        media_ids = []
+        for m in local_media:
+            mime_type = "video/mp4" if m['is_video'] else "image/jpeg"
+            # We open the path directly - this uses almost ZERO RAM
+            with open(m['path'], 'rb') as f:
+                media_dict = mastodon.media_post(f, mime_type=mime_type)
+                media_ids.append(media_dict['id'])
+
         tags_str = " ".join([f"#{t}" for t in post['hashtags']]) if post['hashtags'] else ""
-        full_text = f"{title}\n\n{post['enhanced_description']}\n\n{tags_str}"
-        
-        # Safe slice just in case your instance strictly enforces 500
+        full_text = f"{post['enhanced_title']}\n\n{post['enhanced_description']}\n\n{tags_str}"
         if len(full_text) > 500:
             full_text = post.get('short_text') or full_text[:490]
 
-        # 3. Handle Media Uploads
-        media_ids = []
-        if media_records:
-            for record in media_records:
-                res = requests.get(record['media_url'])
-                if res.status_code == 200:
-                    # Determine mime type quickly
-                    mime_type = "video/mp4" if is_video(record['media_url']) else "image/jpeg"
-                    
-                    try:
-                        # Upload directly from bytes
-                        media_dict = mastodon.media_post(res.content, mime_type=mime_type)
-                        media_ids.append(media_dict['id'])
-                    except Exception as e:
-                        print(f"Warning: Mastodon media upload failed: {e}")
-
-        # 4. Post the Status
         mastodon.status_post(status=full_text, media_ids=media_ids if media_ids else None)
-
     finally:
         if conn: cursor.close(); conn.close()
 
-async def process_bluesky(post_id: int):
+async def process_bluesky(post_id: int, local_media: list):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
@@ -743,18 +699,16 @@ async def process_bluesky(post_id: int):
             print("Post too long for Bluesky. Triggering AI Condenser...")
             full_text = post.get('short_text') or full_text[:290]
 
-        # 3. Handle Media & Post
-        if media_records:
-            img_url = media_records[0]['media_url']
-            img_res = requests.get(img_url)
-            if img_res.status_code == 200:
+         # 3. Handle Media & Post
+        first_image = next((m for m in local_media if not m['is_video']), None)
+
+        if first_image:
+            with open(first_image['path'], 'rb') as f:
                 client.send_image(
                     text=full_text,
-                    image=img_res.content,
-                    image_alt=title
+                    image=f.read(),
+                    image_alt=post['enhanced_title']
                 )
-            else:
-                raise Exception("Failed to download image for Bluesky")
         else:
             client.send_post(text=full_text)
 
@@ -808,7 +762,7 @@ async def process_discord(post_id: int):
     finally:
         if conn: cursor.close(); conn.close()
 
-async def process_telegram(post_id: int):
+async def process_telegram(post_id: int, local_media: list):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
@@ -840,39 +794,36 @@ async def process_telegram(post_id: int):
             if not res.ok: raise Exception(f"Telegram API Error: {res.text}")
 
         # 2. SINGLE IMAGE OR VIDEO
-        elif len(media_records) == 1:
-            media_url = media_records[0]['media_url']
-            is_vid = is_video(media_url)
-            
-            endpoint = "/sendVideo" if is_vid else "/sendPhoto"
-            payload = {
-                "chat_id": chat_id,
-                "video" if is_vid else "photo": media_url,
-                "caption": full_text[:1024] # Telegram limits media captions to 1024 chars
-            }
-            
-            res = requests.post(f"{base_url}{endpoint}", json=payload)
-            if not res.ok: raise Exception(f"Telegram Media Error: {res.text}")
+        if len(local_media) == 1:
+            m = local_media[0]
+            endpoint = "/sendVideo" if m['is_video'] else "/sendPhoto"
+            with open(m['path'], 'rb') as f:
+                res = requests.post(f"{base_url}{endpoint}", 
+                    data={"chat_id": chat_id, "caption": full_text[:1024]},
+                    files={("video" if m['is_video'] else "photo"): f} # 🔥 Send as file
+                )
 
-        # 3. MULTIPLE MEDIA (CAROUSEL / ALBUM)
+        # 3. MULTIPLE MEDIA (ALBUM)
         else:
+            files_to_send = {}
             media_group = []
-            for i, record in enumerate(media_records):
-                is_vid = is_video(record['media_url'])
-                item = {
-                    "type": "video" if is_vid else "photo",
-                    "media": record['media_url']
-                }
-                # Attach the caption ONLY to the very first image so it doesn't repeat
-                if i == 0:
-                    item["caption"] = full_text[:1024]
-                media_group.append(item)
+            for i, m in enumerate(local_media):
+                file_key = f"file_{i}"
+                # Open the file and keep the pointer in the files_to_send dict
+                files_to_send[file_key] = open(m['path'], 'rb')
+                
+                media_group.append({
+                    "type": "video" if m['is_video'] else "photo",
+                    "media": f"attach://{file_key}", # 🔥 Reference the attached file
+                    "caption": full_text[:1024] if i == 0 else ""
+                })
 
-            res = requests.post(f"{base_url}/sendMediaGroup", json={
-                "chat_id": chat_id,
-                "media": media_group
-            })
-            if not res.ok: raise Exception(f"Telegram Carousel Error: {res.text}")
+            requests.post(f"{base_url}/sendMediaGroup", 
+                data={"chat_id": chat_id, "media": json.dumps(media_group)},
+                files=files_to_send
+            )
+            # Close all file pointers
+            for f in files_to_send.values(): f.close()
 
     finally:
         if conn: cursor.close(); conn.close()
@@ -936,19 +887,21 @@ async def process_google(post_id: int, cta_type: str, cta_url: str):
     finally:
         if conn: cursor.close(); conn.close()
 
-async def process_youtube(post_id: int):
+async def process_youtube(post_id: int, local_media: list):
+    """
+    Processes YouTube uploads using pre-downloaded local media to save RAM 
+    and prevent timeouts on Render.
+    """
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM posts WHERE id = %s;", (post_id,))
         post = cursor.fetchone()
-        cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s;", (post_id,))
-        media_records = cursor.fetchall()
         
-        # SMART LOGIC: Find the first video in the payload
-        video_url = next((m['media_url'] for m in media_records if is_video(m['media_url'])), None)
+        # Find the video in our pre-downloaded local_media list
+        video_item = next((m for m in local_media if m['is_video']), None)
         
-        if not video_url:
+        if not video_item:
             raise SkipPublishException("Smart Skip: YouTube requires a video file. Only images were found.")
             
         # Format Text (YouTube Titles have a strict 100 char limit)
@@ -969,129 +922,103 @@ async def process_youtube(post_id: int):
         )
         youtube = build('youtube', 'v3', credentials=creds)
 
-        # 2. Download the video to a temporary file
-        res = requests.get(video_url, stream=True)
-        if res.status_code != 200:
-            raise Exception("Failed to download video from Cloudinary for YouTube.")
-            
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
-            for chunk in res.iter_content(chunk_size=1024*1024):
-                if chunk: temp_video.write(chunk)
-            temp_video_path = temp_video.name
-
-        # 3. Upload to YouTube
-        try:
-            body = {
-                "snippet": {
-                    "title": title,
-                    "description": full_desc,
-                    "tags": post['hashtags'][:15], 
-                    "categoryId": "22" 
-                },
-                "status": {
-                    "privacyStatus": "public",
-                    "selfDeclaredMadeForKids": False
-                }
+        # 2. Upload to YouTube using the local file path
+        body = {
+            "snippet": {
+                "title": title,
+                "description": full_desc,
+                "tags": post['hashtags'][:15], 
+                "categoryId": "22" # People & Blogs
+            },
+            "status": {
+                "privacyStatus": "public",
+                "selfDeclaredMadeForKids": False
             }
+        }
 
-            with open(temp_video_path, "rb") as video_file:
-                media = MediaIoBaseUpload(video_file, mimetype="video/mp4", chunksize=-1, resumable=True)
-                
-                request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
-                response = request.execute()
-                
-            if not response.get("id"):
-                raise Exception("YouTube API returned success, but no Video ID was found.")
-                
-        finally:
-            # Bulletproof cleanup: Verify it exists, then delete safely
-            if os.path.exists(temp_video_path):
-                try:
-                    os.remove(temp_video_path)
-                except Exception as e:
-                    print(f"Warning: Could not delete temp file {temp_video_path}: {e}")
+        # 🔥 REPLACEMENT: Open the local path directly. 
+        # This streams the file from disk to YouTube without loading it into RAM.
+        with open(video_item['path'], "rb") as video_file:
+            media = MediaIoBaseUpload(video_file, mimetype="video/mp4", chunksize=-1, resumable=True)
             
+            request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+            response = request.execute()
+            
+        if not response.get("id"):
+            raise Exception("YouTube API returned success, but no Video ID was found.")
+                
     finally:
+        # Note: We no longer delete the file here because 'start_publishing_cycle' 
+        # handles the final cleanup after ALL platforms are finished.
         if conn: 
             cursor.close()
             conn.close()
-
         
 # ==========================================
 # 4. API ENDPOINTS
 # ==========================================
 
 @router.post("/unified/{post_id}")
-async def publish_unified(post_id: int, request: UnifiedPublishRequest):
+async def publish_unified(post_id: int, request: UnifiedPublishRequest, background_tasks: BackgroundTasks):
     if request.admin_password != os.environ.get("ADMIN_PUBLISH_PASSWORD"):
         raise HTTPException(status_code=401, detail="Incorrect Admin Password")
         
     if not request.platforms:
         raise HTTPException(status_code=400, detail="No platforms selected")
 
-    # --- 1. THE CONCURRENCY WRAPPER ---
-    # This isolated function handles exactly ONE platform from start to finish
-    async def run_processor(platform: str):
-        try:
-            # Route to the correct platform
-            if platform == "LinkedIn":
-                await process_linkedin(post_id) 
-            elif platform == "Facebook":
-                await process_facebook(post_id)
-            elif platform == "Instagram":
-                await process_instagram(post_id)
-            elif platform in ["X", "Twitter/X"]: 
-                await process_x(post_id)
-            elif platform == "YouTube":
-                await process_youtube(post_id)
-            elif platform == "Bluesky":           
-                await process_bluesky(post_id)     
-            elif platform == "Threads":
-                await process_threads(post_id)
-            elif platform == "Pinterest":
-                await process_pinterest(post_id, request.pinterest_board_id)
-            elif platform == "Reddit":                 
-                await process_reddit(post_id, request.reddit_subreddit)
-            elif platform == "Discord":            
-                await process_discord(post_id)     
-            elif platform == "Telegram":           
-                await process_telegram(post_id)    
-            elif platform == "Mastodon":           
-                await process_mastodon(post_id) 
-            elif platform == "Google Business":    
-                await process_google(post_id, request.google_cta_type, request.google_cta_url)
-            else:
-                raise Exception(f"Unknown platform identifier: {platform}")
-
-            # If it didn't crash, it's a success!
-            log_publish_attempt(post_id, platform, "Success")
-            return {"platform": platform, "status": "Success"}
-            
-        except SkipPublishException as skip_e:
-            skip_msg = str(skip_e)
-            log_publish_attempt(post_id, platform, "Skipped", skip_msg)
-            return {"platform": platform, "status": "Skipped", "error": skip_msg}
+    # This inner function now uses the limiter to ensure we don't exceed API rate limits, and it also accepts the pre-downloaded media list
+    async def run_processor_with_limit(platform: str, post_id: int, local_media: list, request: UnifiedPublishRequest):
+        async with limiter: 
+            try:
+                # 🔥 Pass 'local_media' to the platforms that support local file uploads
+                if platform == "LinkedIn": await process_linkedin(post_id, local_media) 
+                elif platform == "Facebook": await process_facebook(post_id) # Meta requires URLs
+                elif platform == "Instagram": await process_instagram(post_id) # Meta requires URLs
+                elif platform in ["X", "Twitter/X"]: await process_x(post_id, local_media)
+                elif platform == "YouTube": await process_youtube(post_id, local_media)
+                elif platform == "Bluesky": await process_bluesky(post_id, local_media)     
+                elif platform == "Threads": await process_threads(post_id) # Meta requires URLs
+                elif platform == "Pinterest": await process_pinterest(post_id, request.pinterest_board_id)
+                elif platform == "Reddit": await process_reddit(post_id, local_media)
+                elif platform == "Discord": await process_discord(post_id) # Webhooks prefer URLs
+                elif platform == "Telegram": await process_telegram(post_id, local_media)    
+                elif platform == "Mastodon": await process_mastodon(post_id, local_media) 
+                elif platform == "Google Business": await process_google(post_id, request.google_cta_type, request.google_cta_url)
                 
-        except Exception as e:
-            error_str = str(e)
-            log_publish_attempt(post_id, platform, "Failed", error_str)
-            return {"platform": platform, "status": "Failed", "error": error_str}
+                log_publish_attempt(post_id, platform, "Success")
+            except SkipPublishException as skip_e:
+                log_publish_attempt(post_id, platform, "Skipped", str(skip_e))
+            except Exception as e:
+                log_publish_attempt(post_id, platform, "Failed", str(e))
 
-    # --- 2. THE ASYNCIO GATHER ENGINE ---
-    tasks = [run_processor(plat) for plat in request.platforms]
-    results = await asyncio.gather(*tasks)
-
-    # --- 3. DATABASE CLEANUP ---
-    if any(r["status"] in ["Success", "Skipped"] for r in results):
+    # --- 2. DEFINE THE BACKGROUND JOB ---
+    async def start_publishing_cycle(post_id, request):
         conn = get_db_connection()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE posts SET status = 'Published' WHERE id = %s;", (post_id,))
-            conn.commit()
-            cursor.close()
-            conn.close()
+        cursor = conn.cursor()
+        cursor.execute("SELECT media_url FROM post_media WHERE post_id = %s;", (post_id,))
+        media_records = cursor.fetchall()
+        cursor.close()
+        conn.close()
 
-    return {"message": "Publishing cycle complete", "logs": results}
+        # 🔥 DOWNLOAD ONCE: Get all images onto disk first
+        local_media = download_media_locally(media_records)
+
+        try:
+            # Pass 'local_media' to your tasks instead of making them download it
+            tasks = [run_processor_with_limit(plat, post_id, local_media, request) for plat in request.platforms]
+            await asyncio.gather(*tasks)
+        finally:
+            # 🔥 CLEANUP: Delete the temp files after all platforms are done
+            for m in local_media:
+                if os.path.exists(m['path']):
+                    os.remove(m['path'])
+
+    # --- 3. FIRE AND FORGET ---
+    # We tell FastAPI to run this in the background
+    background_tasks.add_task(start_publishing_cycle, post_id, request)
+
+    # Return INSTANTLY to the frontend to avoid Cloudflare/Render timeouts
+    return {"message": "Publishing started in background. Check 'View Logs' in a moment for results."}
 
 @router.get("/logs/{post_id}")
 async def get_publish_logs(post_id: int):

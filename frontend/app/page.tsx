@@ -268,19 +268,21 @@ const handleImagesToAPI = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const data = await response.json();
       
       if (response.ok) {
+        // CLOSE publish modal, RESET form, REFRESH history
         setPublishModalOpen(null);
         setAdminPassword("");
         setSelectedPlatforms([]);
         fetchHistory(); 
         
-        // Show a toast or alert that it started
-        alert("Publishing has started! Because of the high-res images, please wait 30 seconds and then click 'View Logs' to see the status.");
+        // OPEN the logs modal instantly with the fresh results!
+        setLogsModalOpen(data.logs); 
       } else {
-        const data = await response.json();
-        alert(data.detail || "Publishing failed to start.");
+        // Show server-level errors (like wrong password) beautifully
+        setLogsModalOpen([{ platform: "System", status: "Failed", error_message: data.detail }]);
       }
     } catch (error) {
-        alert("Network Error: The server is taking too long to respond.");
+      console.error(error);
+      setLogsModalOpen([{ platform: "Network", status: "Failed", error_message: "Failed to connect to the backend server." }]);
     } finally {
       setIsPublishing(null);
     }
