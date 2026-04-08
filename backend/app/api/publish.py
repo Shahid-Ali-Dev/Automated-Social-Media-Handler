@@ -11,7 +11,8 @@ import time
 from datetime import datetime
 from pydantic import BaseModel
 import tweepy
-from fastapi import APIRouter, HTTPException
+import asyncio
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.core.db import get_db_connection
 from dotenv import load_dotenv
 from google.oauth2.credentials import Credentials
@@ -23,6 +24,8 @@ load_dotenv()
 
 router = APIRouter()
 
+MAX_CONCURRENT_PLATFORMS = 3
+limiter = asyncio.Semaphore(MAX_CONCURRENT_PLATFORMS)
 # ==========================================
 # 1. AUTHENTICATION & CONFIGURATION
 # ==========================================
@@ -1022,67 +1025,43 @@ async def process_youtube(post_id: int):
 # ==========================================
 
 @router.post("/unified/{post_id}")
-async def publish_unified(post_id: int, request: UnifiedPublishRequest):
+async def publish_unified(post_id: int, request: UnifiedPublishRequest, background_tasks: BackgroundTasks):
     if request.admin_password != os.environ.get("ADMIN_PUBLISH_PASSWORD"):
         raise HTTPException(status_code=401, detail="Incorrect Admin Password")
         
     if not request.platforms:
         raise HTTPException(status_code=400, detail="No platforms selected")
 
-    # --- 1. THE CONCURRENCY WRAPPER ---
-    # This isolated function handles exactly ONE platform from start to finish
-    async def run_processor(platform: str):
-        try:
-            # Route to the correct platform
-            if platform == "LinkedIn":
-                await process_linkedin(post_id) 
-            elif platform == "Facebook":
-                await process_facebook(post_id)
-            elif platform == "Instagram":
-                await process_instagram(post_id)
-            elif platform in ["X", "Twitter/X"]: 
-                await process_x(post_id)
-            elif platform == "YouTube":
-                await process_youtube(post_id)
-            elif platform == "Bluesky":           
-                await process_bluesky(post_id)     
-            elif platform == "Threads":
-                await process_threads(post_id)
-            elif platform == "Pinterest":
-                await process_pinterest(post_id, request.pinterest_board_id)
-            elif platform == "Reddit":                 
-                await process_reddit(post_id, request.reddit_subreddit)
-            elif platform == "Discord":            
-                await process_discord(post_id)     
-            elif platform == "Telegram":           
-                await process_telegram(post_id)    
-            elif platform == "Mastodon":           
-                await process_mastodon(post_id) 
-            elif platform == "Google Business":    
-                await process_google(post_id, request.google_cta_type, request.google_cta_url)
-            else:
-                raise Exception(f"Unknown platform identifier: {platform}")
-
-            # If it didn't crash, it's a success!
-            log_publish_attempt(post_id, platform, "Success")
-            return {"platform": platform, "status": "Success"}
-            
-        except SkipPublishException as skip_e:
-            skip_msg = str(skip_e)
-            log_publish_attempt(post_id, platform, "Skipped", skip_msg)
-            return {"platform": platform, "status": "Skipped", "error": skip_msg}
+    # This inner function now uses the limiter
+    async def run_processor_with_limit(platform: str):
+        async with limiter: # 🔥 Only 'MAX' tasks can enter here at once
+            try:
+                if platform == "LinkedIn": await process_linkedin(post_id) 
+                elif platform == "Facebook": await process_facebook(post_id)
+                elif platform == "Instagram": await process_instagram(post_id)
+                elif platform in ["X", "Twitter/X"]: await process_x(post_id)
+                elif platform == "YouTube": await process_youtube(post_id)
+                elif platform == "Bluesky": await process_bluesky(post_id)     
+                elif platform == "Threads": await process_threads(post_id)
+                elif platform == "Pinterest": await process_pinterest(post_id, request.pinterest_board_id)
+                elif platform == "Reddit": await process_reddit(post_id, request.reddit_subreddit)
+                elif platform == "Discord": await process_discord(post_id)     
+                elif platform == "Telegram": await process_telegram(post_id)    
+                elif platform == "Mastodon": await process_mastodon(post_id) 
+                elif platform == "Google Business": await process_google(post_id, request.google_cta_type, request.google_cta_url)
                 
-        except Exception as e:
-            error_str = str(e)
-            log_publish_attempt(post_id, platform, "Failed", error_str)
-            return {"platform": platform, "status": "Failed", "error": error_str}
+                log_publish_attempt(post_id, platform, "Success")
+            except SkipPublishException as skip_e:
+                log_publish_attempt(post_id, platform, "Skipped", str(skip_e))
+            except Exception as e:
+                log_publish_attempt(post_id, platform, "Failed", str(e))
 
-    # --- 2. THE ASYNCIO GATHER ENGINE ---
-    tasks = [run_processor(plat) for plat in request.platforms]
-    results = await asyncio.gather(*tasks)
-
-    # --- 3. DATABASE CLEANUP ---
-    if any(r["status"] in ["Success", "Skipped"] for r in results):
+    # --- 2. DEFINE THE BACKGROUND JOB ---
+    async def start_publishing_cycle():
+        tasks = [run_processor_with_limit(plat) for plat in request.platforms]
+        await asyncio.gather(*tasks)
+        
+        # Mark post as published in DB after all tasks are done
         conn = get_db_connection()
         if conn:
             cursor = conn.cursor()
@@ -1091,7 +1070,12 @@ async def publish_unified(post_id: int, request: UnifiedPublishRequest):
             cursor.close()
             conn.close()
 
-    return {"message": "Publishing cycle complete", "logs": results}
+    # --- 3. FIRE AND FORGET ---
+    # We tell FastAPI to run this in the background
+    background_tasks.add_task(start_publishing_cycle)
+
+    # Return INSTANTLY to the frontend to avoid Cloudflare/Render timeouts
+    return {"message": "Publishing started in background. Check 'View Logs' in a moment for results."}
 
 @router.get("/logs/{post_id}")
 async def get_publish_logs(post_id: int):
